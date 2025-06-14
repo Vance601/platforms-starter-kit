@@ -1,48 +1,33 @@
-import "@/styles/globals.css";
-import { cal, inter } from "@/styles/fonts";
-import { Analytics } from "@vercel/analytics/react";
-import { Providers } from "./providers";
-import { Metadata } from "next";
-import { cn } from "@/lib/utils";
+import type React from "react"
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import Sidebar from "@/components/sidebar"
 
-const title =
-  "Platforms Starter Kit – The all-in-one starter kit for building multi-tenant applications.";
-const description =
-  "The Platforms Starter Kit is a full-stack Next.js app with multi-tenancy and custom domain support. Built with Next.js App Router, Vercel Postgres and the Vercel Domains API.";
-const image = "https://vercel.pub/thumbnail.png";
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title,
-  description,
-  icons: ["https://vercel.pub/favicon.ico"],
-  openGraph: {
-    title,
-    description,
-    images: [image],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title,
-    description,
-    images: [image],
-    creator: "@vercel",
-  },
-  metadataBase: new URL("https://vercel.pub"),
-};
+  title: "Dugger's Battery Program",
+  description: "Management system for Dugger's battery technicians",
+    generator: 'v0.dev'
+}
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{
+  children: React.ReactNode
+}>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn(cal.variable, inter.variable)}>
-        <Providers>
-          {children}
-          <Analytics />
-        </Providers>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <main className="flex-1 ml-64 p-4 overflow-auto">{children}</main>
+          </div>
+        </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }
