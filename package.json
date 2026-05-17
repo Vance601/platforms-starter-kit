@@ -2,6 +2,7 @@
   "name": "duggers-ops",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.0.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -60,7 +61,7 @@
     "react-day-picker": "8.10.1",
     "react-dom": "^19",
     "react-hook-form": "^7.54.1",
-    "react-is": "^19.2.6",
+    "react-is": "^19.0.0",
     "react-resizable-panels": "^2.1.7",
     "recharts": "latest",
     "sonner": "^1.7.1",
