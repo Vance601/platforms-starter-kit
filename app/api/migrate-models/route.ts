@@ -59,10 +59,10 @@ export async function GET(req: NextRequest) {
 
     await sql`
       CREATE TABLE IF NOT EXISTS battery_models (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
         code TEXT NOT NULL UNIQUE,
         display_name TEXT NOT NULL,
-        battery_type_id UUID NOT NULL REFERENCES battery_types(id),
+        battery_type_id TEXT NOT NULL REFERENCES battery_types(id),
         default_cost NUMERIC(10, 2),
         active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
 
     await sql`
       ALTER TABLE batteries
-      ADD COLUMN IF NOT EXISTS battery_model_id UUID REFERENCES battery_models(id);
+      ADD COLUMN IF NOT EXISTS battery_model_id TEXT REFERENCES battery_models(id);
     `;
     results.push("Added battery_model_id column to batteries");
 
