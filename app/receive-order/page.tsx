@@ -2,12 +2,29 @@
 
 import { useState, useEffect } from "react";
 
-type Location = { id: string; name: string; companyName: string };
-type BatteryType = { code: string };
+type Location = {
+  id: string;
+  name: string;
+  locationSlug: string;
+  companyName: string;
+  companySlug: string;
+};
+
+type Model = {
+  code: string;
+  displayName: string;
+  classification: string;
+};
+
+type LoggedBattery = {
+  barcode: string;
+  modelDisplay: string;
+};
 
 export default function ReceiveOrderPage() {
   const [locations, setLocations] = useState<Location[]>([]);
-  const [batteryTypes, setBatteryTypes] = useState<BatteryType[]>([]);
+  const [classifications, setClassifications] = useState<string[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
   const [step, setStep] = useState<"invoice" | "scanning">("invoice");
 
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -19,8 +36,9 @@ export default function ReceiveOrderPage() {
   const [invoiceId, setInvoiceId] = useState("");
   const [expectedCount, setExpectedCount] = useState(0);
   const [loggedCount, setLoggedCount] = useState(0);
-  const [selectedType, setSelectedType] = useState("Alpha");
-  const [scannedBarcodes, setScannedBarcodes] = useState<string[]>([]);
+  const [selectedClassification, setSelectedClassification] = useState("");
+  const [selectedModelCode, setSelectedModelCode] = useState("");
+  const [scannedBatteries, setScannedBatteries] = useState<LoggedBattery[]>([]);
 
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -30,10 +48,21 @@ export default function ReceiveOrderPage() {
       .then(r => r.json())
       .then(data => {
         setLocations(data.locations || []);
-        setBatteryTypes(data.batteryTypes || []);
+        setClassifications(data.classifications || []);
+        setModels(data.models || []);
+        if (data.classifications?.length > 0) {
+          setSelectedClassification(data.classifications[0]);
+        }
       })
-      .catch(() => setError("Could not load locations and battery types"));
+      .catch(() => setError("Could not load locations, classifications, and models"));
   }, []);
+
+  useEffect(() => {
+    const firstModel = models.find(m => m.classification === selectedClassification);
+    setSelectedModelCode(firstModel ? firstModel.code : "");
+  }, [selectedClassification, models]);
+
+  const filteredModels = models.filter(m => m.classification === selectedClassification);
 
   async function createInvoice() {
     setError("");
@@ -64,6 +93,10 @@ export default function ReceiveOrderPage() {
 
   async function addBattery() {
     setError("");
+    if (!selectedModelCode) {
+      setError("Please select a battery model");
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetch("/api/receive-order", {
@@ -71,12 +104,13 @@ export default function ReceiveOrderPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "addBattery",
-          invoiceId, batteryTypeCode: selectedType,
+          invoiceId, batteryModelCode: selectedModelCode,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add battery");
-      setScannedBarcodes(prev => [data.barcode, ...prev]);
+      const modelDisplay = models.find(m => m.code === selectedModelCode)?.displayName || selectedModelCode;
+      setScannedBatteries(prev => [{ barcode: data.barcode, modelDisplay }, ...prev]);
       setLoggedCount(data.loggedCount);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -165,27 +199,45 @@ export default function ReceiveOrderPage() {
             <strong>Remaining:</strong> {remaining}
           </div>
 
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-            <select value={selectedType} onChange={e => setSelectedType(e.target.value)}
-              style={{ padding: "8px", flex: 1 }}>
-              {batteryTypes.map(t => (
-                <option key={t.code} value={t.code}>{t.code}</option>
-              ))}
-            </select>
-            <button onClick={addBattery} disabled={isLoading}
-              style={{ padding: "12px 24px", background: "#0c0", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}>
-              {isLoading ? "Adding..." : "+ Add Battery"}
-            </button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+            <label>
+              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Classification</div>
+              <select value={selectedClassification} onChange={e => setSelectedClassification(e.target.value)}
+                style={{ width: "100%", padding: "8px" }}>
+                {classifications.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Model</div>
+              <select value={selectedModelCode} onChange={e => setSelectedModelCode(e.target.value)}
+                style={{ width: "100%", padding: "8px" }}>
+                {filteredModels.map(m => (
+                  <option key={m.code} value={m.code}>{m.displayName}</option>
+                ))}
+              </select>
+            </label>
           </div>
 
+          <button onClick={addBattery} disabled={isLoading || !selectedModelCode}
+            style={{ padding: "12px 24px", width: "100%", background: "#0c0", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginBottom: "12px" }}>
+            {isLoading ? "Adding..." : "+ Add Battery"}
+          </button>
+
           <button onClick={finishInvoice} disabled={isLoading}
-            style={{ padding: "12px 24px", background: "#666", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginBottom: "16px" }}>
+            style={{ padding: "12px 24px", width: "100%", background: "#666", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginBottom: "16px" }}>
             Finish Receiving
           </button>
 
-          <h3>Recently Logged ({scannedBarcodes.length}):</h3>
-          <ul style={{ fontFamily: "monospace", fontSize: "14px" }}>
-            {scannedBarcodes.map(bc => <li key={bc}>{bc}</li>)}
+          <h3>Recently Logged ({scannedBatteries.length}):</h3>
+          <ul style={{ fontFamily: "monospace", fontSize: "14px", listStyle: "none", padding: 0 }}>
+            {scannedBatteries.map(b => (
+              <li key={b.barcode} style={{ padding: "6px 0", borderBottom: "1px solid #eee" }}>
+                <strong>{b.barcode}</strong>
+                <span style={{ marginLeft: "12px", color: "#666", fontFamily: "system-ui, sans-serif" }}>{b.modelDisplay}</span>
+              </li>
+            ))}
           </ul>
         </div>
       )}
