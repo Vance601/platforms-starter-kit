@@ -1,17 +1,9 @@
-
 import { sql } from "@vercel/postgres";
 
 const COMPANY_CODE_MAP: Record<string, string> = {
   "abq": "ABQ",
   "phx": "PHX",
   "tucson": "TUC",
-};
-
-const TYPE_LETTER_MAP: Record<string, string> = {
-  "Alpha": "A",
-  "Bravo": "B",
-  "Charlie": "C",
-  "AMG": "M",
 };
 
 function formatDate(d: Date): string {
@@ -23,7 +15,7 @@ function formatDate(d: Date): string {
 
 export async function generateNextBarcode(
   companySlug: string,
-  batteryTypeCode: string,
+  batteryModelCode: string,
   date: Date = new Date()
 ): Promise<string> {
   const companyCode = COMPANY_CODE_MAP[companySlug];
@@ -31,13 +23,15 @@ export async function generateNextBarcode(
     throw new Error(`Unknown company slug: ${companySlug}`);
   }
 
-  const typeLetter = TYPE_LETTER_MAP[batteryTypeCode];
-  if (!typeLetter) {
-    throw new Error(`Unknown battery type: ${batteryTypeCode}`);
+  const { rows: modelRows } = await sql`
+    SELECT code FROM battery_models WHERE code = ${batteryModelCode};
+  `;
+  if (modelRows.length === 0) {
+    throw new Error(`Unknown battery model code: ${batteryModelCode}`);
   }
 
   const dateStr = formatDate(date);
-  const prefix = `DG-${companyCode}-${typeLetter}-${dateStr}-`;
+  const prefix = `DG-${companyCode}-${batteryModelCode}-${dateStr}-`;
 
   const { rows } = await sql`
     SELECT barcode FROM batteries
