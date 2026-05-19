@@ -47,13 +47,12 @@ export async function GET(req: NextRequest) {
     results.push("Ensured Tesla classification exists");
 
     
-    `;
-    results.push("Ensured Prius classification exists");
     await sql`
       INSERT INTO battery_types (id, code, name, description, default_cost, default_price, par_level_min, par_level_max)
       VALUES (gen_random_uuid(), 'Prius', 'Prius', 'Prius 12V battery', 0, 0, 0, 0)
       ON CONFLICT (code) DO NOTHING;
     `;
+    results.push("Ensured Prius classification exists");
     // ============================================================
     // STEP 2 — Create battery_models table
     // ============================================================
