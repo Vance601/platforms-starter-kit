@@ -55,11 +55,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "addBattery") {
-      const { invoiceId, batteryTypeCode } = body;
+      const { invoiceId, batteryModelCode } = body;
 
-      if (!invoiceId || !batteryTypeCode) {
+      if (!invoiceId || !batteryModelCode) {
         return NextResponse.json(
-          { error: "Missing required fields: invoiceId, batteryTypeCode" },
+          { error: "Missing required fields: invoiceId, batteryModelCode" },
           { status: 400 }
         );
       }
@@ -76,25 +76,32 @@ export async function POST(req: NextRequest) {
       }
       const invoice = invoices[0];
 
-      const { rows: types } = await sql`
-        SELECT id, default_cost FROM battery_types WHERE code = ${batteryTypeCode};
+      const { rows: models } = await sql`
+        SELECT battery_models.id AS model_id,
+               battery_models.default_cost AS model_cost,
+               battery_types.id AS type_id,
+               battery_types.default_cost AS type_cost
+        FROM battery_models
+        JOIN battery_types ON battery_types.id = battery_models.battery_type_id
+        WHERE battery_models.code = ${batteryModelCode};
       `;
-      if (types.length === 0) {
-        return NextResponse.json({ error: "Battery type not found" }, { status: 404 });
+      if (models.length === 0) {
+        return NextResponse.json({ error: "Battery model not found" }, { status: 404 });
       }
-      const batteryType = types[0];
+      const model = models[0];
+      const cost = model.model_cost ?? model.type_cost ?? 0;
 
-      const barcode = await generateNextBarcode(invoice.company_slug, batteryTypeCode);
+      const barcode = await generateNextBarcode(invoice.company_slug, batteryModelCode);
       const batteryId = crypto.randomUUID();
 
       await sql`
         INSERT INTO batteries
-          (id, barcode, battery_type_id, company_id, location_id,
+          (id, barcode, battery_type_id, battery_model_id, company_id, location_id,
            status, cost, mbs_invoice_id, received_at, created_at)
         VALUES
-          (${batteryId}, ${barcode}, ${batteryType.id}, ${invoice.company_id},
-           ${invoice.location_id}, 'in_warehouse', ${batteryType.default_cost},
-           ${invoiceId}, NOW(), NOW());
+          (${batteryId}, ${barcode}, ${model.type_id}, ${model.model_id},
+           ${invoice.company_id}, ${invoice.location_id}, 'in_warehouse',
+           ${cost}, ${invoiceId}, NOW(), NOW());
       `;
 
       await sql`
