@@ -5,78 +5,104 @@ import { useState, useEffect } from "react";
 type Battery = {
   id: string;
   barcode: string;
-  type: string;
   status: string;
-  cost: string | null;
+  cost: string;
   receivedAt: string;
-  locationId: string;
+  classification: string;
+  model: string | null;
+  modelDisplay: string | null;
   locationName: string;
+  locationSlug: string;
   companyName: string;
+  companySlug: string;
   sourceInvoice: string | null;
 };
 
-const LOCATIONS = ["ABQ Main", "Camelback", "Elwood", "Tucson Main"];
-const TYPES = ["Alpha", "Bravo", "Charlie", "AMG"];
-const STATUSES = ["in_warehouse", "assigned", "sold"];
+type LocationSummary = {
+  id: string;
+  locationName: string;
+  locationSlug: string;
+  companyName: string;
+  count: number;
+};
+
+type ClassificationSummary = {
+  classification: string;
+  count: number;
+};
 
 export default function BatteriesPage() {
   const [batteries, setBatteries] = useState<Battery[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [byLocation, setByLocation] = useState<LocationSummary[]>([]);
+  const [byClassification, setByClassification] = useState<ClassificationSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [filterLocation, setFilterLocation] = useState("All");
-  const [filterType, setFilterType] = useState("All");
-  const [filterStatus, setFilterStatus] = useState("All");
-  const [search, setSearch] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [classificationFilter, setClassificationFilter] = useState("");
+  const [modelFilter, setModelFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [searchBarcode, setSearchBarcode] = useState("");
 
   useEffect(() => {
     fetch("/api/batteries")
       .then(r => r.json())
       .then(data => {
         setBatteries(data.batteries || []);
-        setLoading(false);
+        setByLocation(data.byLocation || []);
+        setByClassification(data.byClassification || []);
+        setIsLoading(false);
       })
-      .catch(e => {
-        setError(e instanceof Error ? e.message : "Failed to load batteries");
-        setLoading(false);
+      .catch(() => {
+        setError("Could not load batteries");
+        setIsLoading(false);
       });
   }, []);
 
-  const filtered = batteries.filter(b => {
-    if (filterLocation !== "All" && b.locationName !== filterLocation) return false;
-    if (filterType !== "All" && b.type !== filterType) return false;
-    if (filterStatus !== "All" && b.status !== filterStatus) return false;
-    if (search && !b.barcode.toLowerCase().includes(search.toLowerCase())) return false;
+  const uniqueModels = Array.from(new Set(batteries.map(b => b.model).filter(Boolean))) as string[];
+  uniqueModels.sort();
+
+  const filteredBatteries = batteries.filter(b => {
+    if (locationFilter && b.locationSlug !== locationFilter) return false;
+    if (classificationFilter && b.classification !== classificationFilter) return false;
+    if (modelFilter && b.model !== modelFilter) return false;
+    if (statusFilter && b.status !== statusFilter) return false;
+    if (searchBarcode && !b.barcode.toLowerCase().includes(searchBarcode.toLowerCase())) return false;
     return true;
   });
 
-  const countByLocation = (name: string) => batteries.filter(b => b.locationName === name).length;
-  const countByType = (code: string) => batteries.filter(b => b.type === code).length;
-
-  function daysInInventory(receivedAt: string): number {
-    const received = new Date(receivedAt).getTime();
-    const now = Date.now();
-    return Math.floor((now - received) / (1000 * 60 * 60 * 24));
-  }
-
   function formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   }
 
-  function statusBadgeColor(status: string): string {
-    if (status === "in_warehouse") return "#059669";
-    if (status === "assigned") return "#d97706";
-    if (status === "sold") return "#6b7280";
-    return "#374151";
+  function daysIn(iso: string): string {
+    if (!iso) return "—";
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    return `${days} d`;
+  }
+
+  function statusBadge(status: string) {
+    const label = status.replace(/_/g, " ").toUpperCase();
+    const colors: Record<string, { bg: string; text: string }> = {
+      in_warehouse: { bg: "#0c0", text: "white" },
+      assigned: { bg: "#fc0", text: "black" },
+      sold: { bg: "#888", text: "white" },
+      core_returned: { bg: "#06c", text: "white" },
+    };
+    const style = colors[status] || { bg: "#ccc", text: "black" };
+    return (
+      <span style={{ background: style.bg, color: style.text, padding: "4px 10px", borderRadius: "4px", fontSize: "11px", fontWeight: 600 }}>
+        {label}
+      </span>
+    );
   }
 
   return (
     <div style={{ padding: "24px", maxWidth: "1400px", margin: "0 auto", fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <h1 style={{ margin: 0 }}>Battery Inventory</h1>
-        <a href="/receive-order"
-          style={{ padding: "10px 16px", background: "#0066cc", color: "white", textDecoration: "none", borderRadius: "4px" }}>
+        <a href="/receive-order" style={{ padding: "10px 16px", background: "#06c", color: "white", textDecoration: "none", borderRadius: "4px", fontSize: "14px" }}>
           + Receive Order
         </a>
       </div>
@@ -87,125 +113,119 @@ export default function BatteriesPage() {
         </div>
       )}
 
-      {loading && <p>Loading batteries...</p>}
+      <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>By Location</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
+        {byLocation.map(loc => (
+          <div key={loc.id} style={{ padding: "16px", border: "1px solid #ddd", borderRadius: "4px", background: "#fafafa" }}>
+            <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>{loc.locationName}</div>
+            <div style={{ fontSize: "28px", fontWeight: 600 }}>{loc.count}</div>
+            <div style={{ fontSize: "12px", color: "#999" }}>batteries</div>
+          </div>
+        ))}
+      </div>
 
-      {!loading && (
-        <>
-          <h3 style={{ marginTop: "0", marginBottom: "12px", color: "#374151" }}>By Location</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
-            {LOCATIONS.map(loc => (
-              <div key={loc} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: "16px", borderRadius: "8px" }}>
-                <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>{loc}</div>
-                <div style={{ fontSize: "28px", fontWeight: "bold" }}>{countByLocation(loc)}</div>
-                <div style={{ fontSize: "12px", color: "#6b7280" }}>batteries</div>
-              </div>
+      <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>By Classification</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
+        {byClassification.map(c => (
+          <div key={c.classification} style={{ padding: "16px", border: "1px solid #ddd", borderRadius: "4px", background: "#fafafa" }}>
+            <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>{c.classification} Batteries</div>
+            <div style={{ fontSize: "28px", fontWeight: 600 }}>{c.count}</div>
+            <div style={{ fontSize: "12px", color: "#999" }}>in stock</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "12px", marginBottom: "16px" }}>
+        <div>
+          <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Location</div>
+          <select value={locationFilter} onChange={e => setLocationFilter(e.target.value)}
+            style={{ width: "100%", padding: "8px" }}>
+            <option value="">All Locations</option>
+            {byLocation.map(loc => (
+              <option key={loc.id} value={loc.locationSlug}>{loc.locationName}</option>
             ))}
-          </div>
-
-          <h3 style={{ marginTop: "0", marginBottom: "12px", color: "#374151" }}>By Type</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "24px" }}>
-            {TYPES.map(t => (
-              <div key={t} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: "16px", borderRadius: "8px" }}>
-                <div style={{ fontSize: "13px", color: "#6b7280", marginBottom: "4px" }}>{t} Batteries</div>
-                <div style={{ fontSize: "28px", fontWeight: "bold" }}>{countByType(t)}</div>
-                <div style={{ fontSize: "12px", color: "#6b7280" }}>in stock</div>
-              </div>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Classification</div>
+          <select value={classificationFilter} onChange={e => setClassificationFilter(e.target.value)}
+            style={{ width: "100%", padding: "8px" }}>
+            <option value="">All Classifications</option>
+            {byClassification.map(c => (
+              <option key={c.classification} value={c.classification}>{c.classification}</option>
             ))}
-          </div>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Model</div>
+          <select value={modelFilter} onChange={e => setModelFilter(e.target.value)}
+            style={{ width: "100%", padding: "8px" }}>
+            <option value="">All Models</option>
+            {uniqueModels.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Status</div>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            style={{ width: "100%", padding: "8px" }}>
+            <option value="">All Statuses</option>
+            <option value="in_warehouse">In Warehouse</option>
+            <option value="assigned">Assigned</option>
+            <option value="sold">Sold</option>
+            <option value="core_returned">Core Returned</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Search Barcode</div>
+          <input type="text" value={searchBarcode} onChange={e => setSearchBarcode(e.target.value)}
+            placeholder="DG-PHX-..." style={{ width: "100%", padding: "8px", boxSizing: "border-box" }} />
+        </div>
+      </div>
 
-          <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: "16px", borderRadius: "8px", marginBottom: "16px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 2fr", gap: "12px", alignItems: "end" }}>
-              <label>
-                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>Location</div>
-                <select value={filterLocation} onChange={e => setFilterLocation(e.target.value)}
-                  style={{ width: "100%", padding: "8px" }}>
-                  <option value="All">All Locations</option>
-                  {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-              </label>
-              <label>
-                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>Type</div>
-                <select value={filterType} onChange={e => setFilterType(e.target.value)}
-                  style={{ width: "100%", padding: "8px" }}>
-                  <option value="All">All Types</option>
-                  {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </label>
-              <label>
-                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>Status</div>
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-                  style={{ width: "100%", padding: "8px" }}>
-                  <option value="All">All Statuses</option>
-                  {STATUSES.map(s => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
-                </select>
-              </label>
-              <label>
-                <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "4px" }}>Search Barcode</div>
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="DG-PHX-A-..."
-                  style={{ width: "100%", padding: "8px", boxSizing: "border-box" }} />
-              </label>
-            </div>
-            <div style={{ marginTop: "12px", fontSize: "13px", color: "#6b7280" }}>
-              Showing {filtered.length} of {batteries.length} batteries
-            </div>
-          </div>
+      <div style={{ marginBottom: "12px", fontSize: "13px", color: "#666" }}>
+        {isLoading ? "Loading..." : `Showing ${filteredBatteries.length} of ${batteries.length} batteries`}
+      </div>
 
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
-              <thead>
-                <tr style={{ background: "#f3f4f6", textAlign: "left" }}>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Barcode</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Type</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Location</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Status</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Cost</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Received</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Days In</th>
-                  <th style={{ padding: "12px 8px", borderBottom: "2px solid #e5e7eb" }}>Source Invoice</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: "24px", textAlign: "center", color: "#6b7280" }}>
-                      No batteries match these filters.
-                    </td>
-                  </tr>
-                )}
-                {filtered.map(b => (
-                  <tr key={b.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "10px 8px", fontFamily: "monospace", fontSize: "13px" }}>{b.barcode}</td>
-                    <td style={{ padding: "10px 8px" }}>{b.type}</td>
-                    <td style={{ padding: "10px 8px" }}>
-                      <div>{b.locationName}</div>
-                      <div style={{ fontSize: "11px", color: "#6b7280" }}>{b.companyName}</div>
-                    </td>
-                    <td style={{ padding: "10px 8px" }}>
-                      <span style={{
-                        background: statusBadgeColor(b.status),
-                        color: "white",
-                        padding: "3px 8px",
-                        borderRadius: "12px",
-                        fontSize: "11px",
-                        fontWeight: "bold",
-                        textTransform: "uppercase",
-                      }}>
-                        {b.status.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td style={{ padding: "10px 8px" }}>{b.cost ? `$${b.cost}` : "—"}</td>
-                    <td style={{ padding: "10px 8px" }}>{formatDate(b.receivedAt)}</td>
-                    <td style={{ padding: "10px 8px" }}>{daysInInventory(b.receivedAt)} d</td>
-                    <td style={{ padding: "10px 8px", fontFamily: "monospace", fontSize: "12px" }}>
-                      {b.sourceInvoice || "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
+        <thead>
+          <tr style={{ background: "#f5f5f5", borderBottom: "2px solid #ddd" }}>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Barcode</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Classification</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Model</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Location</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Status</th>
+            <th style={{ padding: "12px 8px", textAlign: "right" }}>Cost</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Received</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Days In</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Source Invoice</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredBatteries.map(b => (
+            <tr key={b.id} style={{ borderBottom: "1px solid #eee" }}>
+              <td style={{ padding: "12px 8px", fontFamily: "monospace", fontSize: "13px" }}>{b.barcode}</td>
+              <td style={{ padding: "12px 8px" }}>{b.classification}</td>
+              <td style={{ padding: "12px 8px", fontWeight: 500 }}>{b.modelDisplay || "—"}</td>
+              <td style={{ padding: "12px 8px" }}>
+                <div>{b.locationName}</div>
+                <div style={{ fontSize: "12px", color: "#888" }}>{b.companyName}</div>
+              </td>
+              <td style={{ padding: "12px 8px" }}>{statusBadge(b.status)}</td>
+              <td style={{ padding: "12px 8px", textAlign: "right" }}>${parseFloat(b.cost).toFixed(2)}</td>
+              <td style={{ padding: "12px 8px" }}>{formatDate(b.receivedAt)}</td>
+              <td style={{ padding: "12px 8px" }}>{daysIn(b.receivedAt)}</td>
+              <td style={{ padding: "12px 8px", fontFamily: "monospace", fontSize: "13px" }}>{b.sourceInvoice || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {!isLoading && filteredBatteries.length === 0 && (
+        <div style={{ padding: "32px", textAlign: "center", color: "#888" }}>
+          No batteries match your filters
+        </div>
       )}
     </div>
   );
