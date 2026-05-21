@@ -17,10 +17,36 @@ export async function GET(req: NextRequest) {
 
   try {
     // ============================================================
-    // STEP 1 — Create trucks table
+    // STEP 0 — Inspect and safely drop any existing trucks table
+    // ============================================================
+    const { rows: existingCols } = await sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'trucks'
+      ORDER BY ordinal_position;
+    `;
+    if (existingCols.length > 0) {
+      results.push(`Old trucks table found with columns: ${existingCols.map(c => c.column_name).join(", ")}`);
+
+      let oldRowCount = 0;
+      try {
+        const { rows: countRows } = await sql`SELECT COUNT(*)::int AS count FROM trucks;`;
+        oldRowCount = countRows[0].count;
+      } catch {
+        oldRowCount = -1;
+      }
+      results.push(`Old trucks table row count: ${oldRowCount}`);
+
+      await sql`DROP TABLE IF EXISTS trucks CASCADE;`;
+      results.push("Dropped old trucks table");
+    } else {
+      results.push("No existing trucks table found");
+    }
+
+    // ============================================================
+    // STEP 1 — Create trucks table (fresh)
     // ============================================================
     await sql`
-      CREATE TABLE IF NOT EXISTS trucks (
+      CREATE TABLE trucks (
         id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
         truck_number TEXT NOT NULL,
         company_id TEXT REFERENCES companies(id),
@@ -31,20 +57,20 @@ export async function GET(req: NextRequest) {
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `;
-    results.push("Created trucks table");
+    results.push("Created trucks table (fresh)");
 
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_trucks_company ON trucks(company_id);
+      CREATE INDEX idx_trucks_company ON trucks(company_id);
     `;
     results.push("Created index on trucks.company_id");
 
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_trucks_driver ON trucks(current_driver_id);
+      CREATE INDEX idx_trucks_driver ON trucks(current_driver_id);
     `;
     results.push("Created index on trucks.current_driver_id");
 
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_trucks_active ON trucks(active);
+      CREATE INDEX idx_trucks_active ON trucks(active);
     `;
     results.push("Created index on trucks.active");
 
@@ -69,22 +95,14 @@ export async function GET(req: NextRequest) {
     const truckNumbers = ["128", "129", "130"];
 
     let seeded = 0;
-    let skipped = 0;
     for (const num of truckNumbers) {
-      const { rows: existing } = await sql`
-        SELECT id FROM trucks WHERE truck_number = ${num} AND company_id = ${phxCompanyId};
-      `;
-      if (existing.length > 0) {
-        skipped++;
-        continue;
-      }
       await sql`
         INSERT INTO trucks (truck_number, company_id, current_driver_id, capacity, active)
         VALUES (${num}, ${phxCompanyId}, NULL, 20, TRUE);
       `;
       seeded++;
     }
-    results.push(`Seeded ${seeded} test trucks (skipped ${skipped} already present)`);
+    results.push(`Seeded ${seeded} test trucks`);
 
     // ============================================================
     // STEP 4 — Verification snapshot
