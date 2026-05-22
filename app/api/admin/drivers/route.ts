@@ -19,7 +19,7 @@ function checkAdmin(req: NextRequest, body?: Record<string, unknown>): boolean {
     (body?.pw as string | undefined) ||
     req.headers.get("x-admin-pw") ||
     "";
-  const expected = process.env.ADMIN_PASSWORD || "";
+  const expected = process.env.MIGRATE_SECRET || "";
   return expected.length > 0 && pw === expected;
 }
 
