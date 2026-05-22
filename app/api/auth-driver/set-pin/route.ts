@@ -1,26 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { randomBytes, scryptSync } from "crypto";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // Hash a PIN as "salt:hash" — same scheme as migrate-drivers/route.ts.
 function hashPin(pin: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(pin, salt, 64).toString("hex");
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(pin, salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 
 // Verify the session cookie set by auth-driver login.
-// Returns the driverId if the signature is valid and not expired.
 function verifySession(token: string | undefined): string | null {
   if (!token) return null;
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   const [driverId, expiryStr, sig] = parts;
   const secret = process.env.MIGRATE_SECRET || "";
-  const expected = scryptSync(`${driverId}.${expiryStr}`, secret, 32).toString("hex");
+  const expected = crypto.scryptSync(`${driverId}.${expiryStr}`, secret, 32).toString("hex");
   if (sig !== expected) return null;
   if (Date.now() > Number(expiryStr)) return null;
   return driverId;
@@ -28,8 +27,6 @@ function verifySession(token: string | undefined): string | null {
 
 export async function POST(req: NextRequest) {
   try {
-    // Identify the driver from their session cookie — they can only
-    // change their own PIN.
     const token = req.cookies.get("driver_session")?.value;
     const driverId = verifySession(token);
     if (!driverId) {
@@ -80,4 +77,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-}D
+}
