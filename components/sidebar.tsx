@@ -559,7 +559,16 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             </Button>
           </div>
         </div>
-        <div className="px-3 py-1">
+       <div className="px-3 py-1">
+          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Admin</h2>
+          <Button variant={pathname === "/admin/drivers" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/admin/drivers">
+              <Users className="mr-2 h-4 w-4" />
+              Drivers
+            </Link>
+          </Button>
+        </div>
+                 <div className="px-3 py-1">
           <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
           <Button variant={pathname === "/settings" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/settings">
