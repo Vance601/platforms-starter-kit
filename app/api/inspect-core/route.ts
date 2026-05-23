@@ -27,6 +27,14 @@ export async function GET(req: NextRequest) {
       ORDER BY e.enumsortorder;
     `;
 
+    // Columns on drivers (to confirm how a driver is tied to a company).
+    const { rows: driverColumns } = await sql`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'drivers'
+      ORDER BY ordinal_position;
+    `;
+
     // Core accountability snapshot with current data.
     const { rows: coreSnapshot } = await sql`
       SELECT
@@ -40,6 +48,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       movementColumns,
       enumValues,
+      driverColumns,
       coreSnapshot: coreSnapshot[0],
     });
   } catch (err: unknown) {
