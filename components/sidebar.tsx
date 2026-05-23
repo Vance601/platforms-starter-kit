@@ -13,10 +13,8 @@ import {
   Truck,
   Users,
   Battery,
-  RotateCcw,
   PackageCheck,
   PackagePlus,
-  DollarSign,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -112,26 +110,6 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               <Link href="/alerts">
                 <Package className="mr-2 h-4 w-4" />
                 Alerts
-              </Link>
-            </Button>
-            <Button
-              variant={pathname.startsWith("/core-returns") ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/core-returns">
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Core Returns
-              </Link>
-            </Button>
-            <Button
-              variant={pathname.startsWith("/core-returns/reconciliation") ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/core-returns/reconciliation">
-                <DollarSign className="mr-2 h-4 w-4" />
-                Reconciliation
               </Link>
             </Button>
           </div>
