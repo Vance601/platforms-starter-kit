@@ -34,6 +34,13 @@ export async function POST(req: NextRequest) {
     const callNumberRaw: string | undefined = body?.callNumber;
     const callNumber = (callNumberRaw || "").trim();
 
+    // Warranty fields (all optional — only present on a warranty sale).
+    const isWarranty: boolean = body?.isWarranty === true;
+    const replacesBatteryIdRaw: string | undefined = body?.replacesBatteryId;
+    const replacesBatteryId = (replacesBatteryIdRaw || "").trim() || null;
+    const warrantyNoteRaw: string | undefined = body?.warrantyNote;
+    const warrantyNote = (warrantyNoteRaw || "").trim() || null;
+
     if (!batteryId) {
       return NextResponse.json(
         { success: false, error: "No battery selected." },
@@ -43,6 +50,14 @@ export async function POST(req: NextRequest) {
     if (!callNumber) {
       return NextResponse.json(
         { success: false, error: "A call number is required to record a sale." },
+        { status: 400 }
+      );
+    }
+
+    // On a warranty sale, require EITHER a linked failed battery OR a note ('other / not in system').
+    if (isWarranty && !replacesBatteryId && !warrantyNote) {
+      return NextResponse.json(
+        { success: false, error: "For a warranty, pick the failed battery or note it's not in the system." },
         { status: 400 }
       );
     }
@@ -103,37 +118,85 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // --- Perform the sale ---
-    // 1) Mark the battery sold. Clear the truck columns (it's now in a customer's vehicle).
-    //    NOTE: sold_by_id is intentionally NOT set — it references users, not drivers.
-    //    The seller is captured on the movement row's driver_id (-> drivers).
-    await sql`
-      UPDATE batteries
-      SET status = 'sold',
-          sold_at = NOW(),
-          sold_on_call_number = ${callNumber},
-          truck_id = NULL,
-          current_truck_id = NULL
-      WHERE id = ${battery.id};
-    `;
+    // If a failed battery was picked, validate it: must be a sold battery in this company.
+    let validatedReplacesId: string | null = null;
+    if (isWarranty && replacesBatteryId) {
+      const { rows: failedRows } = await sql`
+        SELECT id, status, company_id
+        FROM batteries
+        WHERE id = ${replacesBatteryId};
+      `;
+      if (failedRows.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "The failed battery you selected was not found." },
+          { status: 404 }
+        );
+      }
+      const failed = failedRows[0];
+      if (failed.company_id !== driver.company_id) {
+        return NextResponse.json(
+          { success: false, error: "The failed battery belongs to a different company." },
+          { status: 403 }
+        );
+      }
+      if (failed.status !== "sold") {
+        return NextResponse.json(
+          { success: false, error: "The failed battery you selected is not marked as sold." },
+          { status: 409 }
+        );
+      }
+      validatedReplacesId = failed.id;
+    }
 
-    // 2) Log the movement (on_truck -> sold). id has no default, so we generate it.
-    //    FK-safe columns only: driver_id -> drivers, from_truck_id -> trucks.
-    //    call_reference stores the call number on the movement record too.
+    // --- Perform the sale ---
+    // 1) Mark the battery sold. Clear truck columns. On a warranty: cost = 0 + warranty fields.
+    //    sold_by_id is intentionally NOT set (references users, not drivers).
+    if (isWarranty) {
+      await sql`
+        UPDATE batteries
+        SET status = 'sold',
+            sold_at = NOW(),
+            sold_on_call_number = ${callNumber},
+            cost = 0,
+            is_warranty = true,
+            warranty_replaces_battery_id = ${validatedReplacesId},
+            warranty_note = ${warrantyNote},
+            truck_id = NULL,
+            current_truck_id = NULL
+        WHERE id = ${battery.id};
+      `;
+    } else {
+      await sql`
+        UPDATE batteries
+        SET status = 'sold',
+            sold_at = NOW(),
+            sold_on_call_number = ${callNumber},
+            truck_id = NULL,
+            current_truck_id = NULL
+        WHERE id = ${battery.id};
+      `;
+    }
+
+    // 2) Log the movement (on_truck -> sold). FK-safe columns only.
     const movementId = crypto.randomUUID();
+    const movementNote = isWarranty
+      ? `WARRANTY sale on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})` +
+        (validatedReplacesId ? ` — replaces battery ${validatedReplacesId}` : ` — replaces (not in system): ${warrantyNote}`)
+      : `Sold on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})`;
     await sql`
       INSERT INTO battery_movements
         (id, battery_id, from_status, to_status, from_truck_id, driver_id, call_reference, notes)
       VALUES
         (${movementId}, ${battery.id}, 'on_truck', 'sold',
-         ${truck.id}, ${driverId}, ${callNumber},
-         ${`Sold on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})`});
+         ${truck.id}, ${driverId}, ${callNumber}, ${movementNote});
     `;
 
     return NextResponse.json({
       success: true,
-      message: `Battery ${battery.barcode} sold on call #${callNumber}`,
-      battery: { id: battery.id, barcode: battery.barcode, status: "sold" },
+      message: isWarranty
+        ? `Warranty: Battery ${battery.barcode} installed FREE on call #${callNumber}`
+        : `Battery ${battery.barcode} sold on call #${callNumber}`,
+      battery: { id: battery.id, barcode: battery.barcode, status: "sold", isWarranty },
       callNumber,
     });
   } catch (err: unknown) {
