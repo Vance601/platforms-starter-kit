@@ -14,7 +14,24 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // The valid values of the battery_status enum — THE thing I need for Phase 4
+    // Foreign keys ON the batteries table — what each FK column actually points to.
+    const { rows: batteryForeignKeys } = await sql`
+      SELECT
+        kcu.column_name AS fk_column,
+        ccu.table_name AS references_table,
+        ccu.column_name AS references_column,
+        tc.constraint_name
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name
+      JOIN information_schema.constraint_column_usage ccu
+        ON ccu.constraint_name = tc.constraint_name
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_name = 'batteries'
+      ORDER BY kcu.column_name;
+    `;
+
+    // The battery_status enum values.
     const { rows: statusEnum } = await sql`
       SELECT e.enumlabel AS value, e.enumsortorder AS sort_order
       FROM pg_type t
@@ -23,15 +40,7 @@ export async function GET(req: NextRequest) {
       ORDER BY e.enumsortorder;
     `;
 
-    // Full column list for battery_movements
-    const { rows: movementCols } = await sql`
-      SELECT column_name, data_type, is_nullable, column_default
-      FROM information_schema.columns
-      WHERE table_name = 'battery_movements'
-      ORDER BY ordinal_position;
-    `;
-
-    // Count batteries by status so I know what state the data is actually in
+    // Count batteries by status.
     const { rows: statusCounts } = await sql`
       SELECT status::text AS status, COUNT(*)::int AS count
       FROM batteries
@@ -39,29 +48,11 @@ export async function GET(req: NextRequest) {
       ORDER BY status;
     `;
 
-    // A few full sample battery rows
-    const { rows: sampleBatteries } = await sql`
-      SELECT id, barcode, company_id, location_id, truck_id,
-             current_truck_id, current_driver_id, status
-      FROM batteries
-      LIMIT 5;
-    `;
-
-    // Trucks, so I can confirm how a driver picks one and what id format looks like
-    const { rows: sampleTrucks } = await sql`
-      SELECT id, truck_number, company_id, current_driver_id, active
-      FROM trucks
-      ORDER BY truck_number
-      LIMIT 20;
-    `;
-
     return NextResponse.json({
       success: true,
+      battery_foreign_keys: batteryForeignKeys,
       battery_status_enum: statusEnum,
-      battery_movements_columns: movementCols,
       battery_status_counts: statusCounts,
-      sample_batteries: sampleBatteries,
-      sample_trucks: sampleTrucks,
     });
   } catch (err: unknown) {
     return NextResponse.json(
