@@ -54,6 +54,36 @@ export async function GET(req: NextRequest) {
       ORDER BY barcode;
     `;
 
+    // Aging inventory: batteries currently ON A TRUCK, how long they've been there,
+    // and which driver is accountable. The load event lives in battery_movements
+    // (to_status = 'on_truck'); we take the most recent one per battery for the
+    // load date and the driver who loaded it. We also show the truck's current driver.
+    // days_on_truck drives the green/yellow/red flag on the page (red at 14+).
+    const { rows: agingOnTruck } = await sql`
+      SELECT
+        b.id,
+        b.barcode,
+        t.truck_number,
+        loader.name AS loaded_by,
+        holder.name AS current_holder,
+        lm.occurred_at AS loaded_at,
+        FLOOR(EXTRACT(EPOCH FROM (now() - lm.occurred_at)) / 86400)::int AS days_on_truck
+      FROM batteries b
+      LEFT JOIN trucks t ON t.id = b.truck_id
+      LEFT JOIN drivers holder ON holder.id = t.current_driver_id
+      LEFT JOIN LATERAL (
+        SELECT m.driver_id, m.occurred_at
+        FROM battery_movements m
+        WHERE m.battery_id = b.id
+          AND m.to_status = 'on_truck'
+        ORDER BY m.occurred_at DESC
+        LIMIT 1
+      ) lm ON true
+      LEFT JOIN drivers loader ON loader.id = lm.driver_id
+      WHERE b.status = 'on_truck'
+      ORDER BY lm.occurred_at ASC NULLS FIRST;
+    `;
+
     // Revenue snapshot: paid sales vs free warranties.
     const { rows: revenue } = await sql`
       SELECT
@@ -68,6 +98,7 @@ export async function GET(req: NextRequest) {
       statusCounts,
       batteries,
       redFlags,
+      agingOnTruck,
       revenue: revenue[0],
     });
   } catch (err: unknown) {
