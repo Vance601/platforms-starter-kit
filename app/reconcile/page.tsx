@@ -32,6 +32,11 @@ type Revenue = {
   warranty_replacements: number;
   paid_revenue: string;
 };
+type CoreAccountability = {
+  owed: number;
+  returned: number;
+  outstanding: number;
+};
 
 type ReconcileData = {
   success: boolean;
@@ -41,6 +46,7 @@ type ReconcileData = {
   redFlags?: RedFlag[];
   agingOnTruck?: AgingBattery[];
   revenue?: Revenue;
+  coreAccountability?: CoreAccountability;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -169,6 +175,7 @@ export default function ReconcilePage() {
   const redFlags = data.redFlags || [];
   const aging = data.agingOnTruck || [];
   const revenue = data.revenue;
+  const coreAcct = data.coreAccountability;
 
   // How many aging units are in the red (14+ days)?
   const agingRed = aging.filter((a) => agingTier(a.days_on_truck) === "red").length;
@@ -231,6 +238,53 @@ export default function ReconcilePage() {
           <div className="rounded-lg border px-4 py-3 text-center">
             <p className="text-xl font-bold">${revenue.paid_revenue}</p>
             <p className="text-xs text-muted-foreground">Paid Revenue</p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Core accountability — cores owed to MBS vs returned. Outstanding = money still owed back. */}
+      {coreAcct ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Core Accountability — MBS</h2>
+            {coreAcct.outstanding > 0 ? (
+              <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+                {coreAcct.outstanding} core{coreAcct.outstanding === 1 ? "" : "s"} not returned
+              </span>
+            ) : (
+              <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                All cores returned
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Each battery bought from MBS carries one core charge. Return the dead core to get credited. Outstanding cores are money still owed back to you.
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border px-4 py-3 text-center">
+              <p className="text-xl font-bold">{coreAcct.owed}</p>
+              <p className="text-xs text-muted-foreground">Cores Owed to MBS</p>
+            </div>
+            <div className="rounded-lg border px-4 py-3 text-center">
+              <p className="text-xl font-bold">{coreAcct.returned}</p>
+              <p className="text-xs text-muted-foreground">Cores Returned</p>
+            </div>
+            <div
+              className={
+                "rounded-lg border px-4 py-3 text-center " +
+                (coreAcct.outstanding > 0 ? "border-red-300 bg-red-50" : "")
+              }
+            >
+              <p
+                className={
+                  "text-xl font-bold " +
+                  (coreAcct.outstanding > 0 ? "text-red-700" : "")
+                }
+              >
+                {coreAcct.outstanding}
+              </p>
+              <p className="text-xs text-muted-foreground">Outstanding</p>
+            </div>
           </div>
         </div>
       ) : null}
