@@ -18,6 +18,15 @@ type Battery = {
 
 type StatusCount = { status: string; count: number };
 type RedFlag = { id: string; barcode: string; status: string };
+type AgingBattery = {
+  id: string;
+  barcode: string;
+  truck_number: string | null;
+  loaded_by: string | null;
+  current_holder: string | null;
+  loaded_at: string | null;
+  days_on_truck: number | null;
+};
 type Revenue = {
   paid_sales: number;
   warranty_replacements: number;
@@ -30,6 +39,7 @@ type ReconcileData = {
   statusCounts?: StatusCount[];
   batteries?: Battery[];
   redFlags?: RedFlag[];
+  agingOnTruck?: AgingBattery[];
   revenue?: Revenue;
 };
 
@@ -58,6 +68,36 @@ function statusColor(status: string): string {
       return "bg-purple-100 text-purple-700";
     default:
       return "bg-slate-100 text-slate-700";
+  }
+}
+
+// Aging thresholds: red at 14+ days on a truck with no sale, yellow at 7-13.
+function agingTier(days: number | null): "red" | "yellow" | "green" {
+  if (days === null) return "yellow"; // unknown load date — worth a look
+  if (days >= 14) return "red";
+  if (days >= 7) return "yellow";
+  return "green";
+}
+
+function agingRowColor(tier: "red" | "yellow" | "green"): string {
+  switch (tier) {
+    case "red":
+      return "bg-red-50";
+    case "yellow":
+      return "bg-amber-50";
+    default:
+      return "";
+  }
+}
+
+function agingBadge(tier: "red" | "yellow" | "green"): string {
+  switch (tier) {
+    case "red":
+      return "bg-red-100 text-red-700";
+    case "yellow":
+      return "bg-amber-100 text-amber-700";
+    default:
+      return "bg-green-100 text-green-700";
   }
 }
 
@@ -127,7 +167,11 @@ export default function ReconcilePage() {
   const counts = data.statusCounts || [];
   const batteries = data.batteries || [];
   const redFlags = data.redFlags || [];
+  const aging = data.agingOnTruck || [];
   const revenue = data.revenue;
+
+  // How many aging units are in the red (14+ days)?
+  const agingRed = aging.filter((a) => agingTier(a.days_on_truck) === "red").length;
 
   return (
     <div className="space-y-6 py-2">
@@ -190,6 +234,64 @@ export default function ReconcilePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Aging inventory — batteries on trucks, accountability by driver */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Aging Inventory — Batteries On Trucks</h2>
+          {agingRed > 0 ? (
+            <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
+              {agingRed} over 14 days
+            </span>
+          ) : (
+            <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+              None overdue
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Batteries loaded onto a truck but not yet sold or returned. Red = 14+ days (follow up with the driver).
+        </p>
+        {aging.length === 0 ? (
+          <div className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+            No batteries currently on trucks.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2">Barcode</th>
+                  <th className="px-3 py-2">Truck</th>
+                  <th className="px-3 py-2">Driver (loaded by)</th>
+                  <th className="px-3 py-2">Truck held by</th>
+                  <th className="px-3 py-2">Days on truck</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aging.map((a) => {
+                  const tier = agingTier(a.days_on_truck);
+                  return (
+                    <tr key={a.id} className={"border-b last:border-0 " + agingRowColor(tier)}>
+                      <td className="px-3 py-2 font-mono">{a.barcode}</td>
+                      <td className="px-3 py-2">
+                        {a.truck_number ? `#${a.truck_number}` : "—"}
+                      </td>
+                      <td className="px-3 py-2">{a.loaded_by || "—"}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{a.current_holder || "—"}</td>
+                      <td className="px-3 py-2">
+                        <span className={"rounded-full px-2 py-0.5 text-xs font-medium " + agingBadge(tier)}>
+                          {a.days_on_truck === null ? "unknown" : `${a.days_on_truck} day${a.days_on_truck === 1 ? "" : "s"}`}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Full battery list */}
       <div className="overflow-x-auto rounded-lg border">
