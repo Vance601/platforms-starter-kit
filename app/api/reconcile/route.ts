@@ -93,6 +93,21 @@ export async function GET(req: NextRequest) {
       FROM batteries;
     `;
 
+    // Core accountability: cores owed to MBS vs cores returned.
+    // Every battery bought from MBS (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
+    // A core is recovered when its battery is marked status = 'returned_core'.
+    // Outstanding = owed - returned = cores not yet returned (money still owed back by MBS).
+    const { rows: coreAccountability } = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)::int AS owed,
+        COUNT(*) FILTER (WHERE status = 'returned_core')::int AS returned,
+        (
+          COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)
+          - COUNT(*) FILTER (WHERE status = 'returned_core')
+        )::int AS outstanding
+      FROM batteries;
+    `;
+
     return NextResponse.json({
       success: true,
       statusCounts,
@@ -100,6 +115,7 @@ export async function GET(req: NextRequest) {
       redFlags,
       agingOnTruck,
       revenue: revenue[0],
+      coreAccountability: coreAccountability[0],
     });
   } catch (err: unknown) {
     return NextResponse.json(
