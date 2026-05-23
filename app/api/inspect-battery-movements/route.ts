@@ -14,24 +14,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // FKs on battery_movements — do its driver columns point to users or drivers?
-    const { rows: movementForeignKeys } = await sql`
-      SELECT
-        kcu.column_name AS fk_column,
-        ccu.table_name AS references_table,
-        ccu.column_name AS references_column,
-        tc.constraint_name
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON tc.constraint_name = kcu.constraint_name
-      JOIN information_schema.constraint_column_usage ccu
-        ON ccu.constraint_name = tc.constraint_name
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_name = 'battery_movements'
-      ORDER BY kcu.column_name;
+    // Full picture of both test batteries: status, sale, and warranty link.
+    const { rows: batteries } = await sql`
+      SELECT id, barcode, status, cost, sold_on_call_number,
+             is_warranty, warranty_replaces_battery_id, warranty_note
+      FROM batteries
+      ORDER BY barcode;
     `;
 
-    // Status counts (sanity check — should still be in_warehouse: 2).
+    // Status counts.
     const { rows: statusCounts } = await sql`
       SELECT status::text AS status, COUNT(*)::int AS count
       FROM batteries
@@ -41,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      battery_movements_foreign_keys: movementForeignKeys,
+      batteries,
       battery_status_counts: statusCounts,
     });
   } catch (err: unknown) {
