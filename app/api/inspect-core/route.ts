@@ -10,41 +10,37 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const { rows: columns } = await sql`
+    // Columns on battery_movements (to confirm we can log a core return without a migration).
+    const { rows: movementColumns } = await sql`
       SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
-      WHERE table_name = 'batteries'
+      WHERE table_name = 'battery_movements'
       ORDER BY ordinal_position;
     `;
 
-    const { rows: byStatus } = await sql`
-      SELECT status::text AS status, COUNT(*)::int AS count
-      FROM batteries
-      GROUP BY status
-      ORDER BY status;
+    // The battery_status enum values (confirm returned_core is present).
+    const { rows: enumValues } = await sql`
+      SELECT e.enumlabel AS value
+      FROM pg_type t
+      JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typname = 'battery_status'
+      ORDER BY e.enumsortorder;
     `;
 
-    const { rows: mbsInfo } = await sql`
+    // Core accountability snapshot with current data.
+    const { rows: coreSnapshot } = await sql`
       SELECT
-        COUNT(*)::int AS total_batteries,
-        COUNT(mbs_invoice_id)::int AS with_mbs_invoice,
-        COUNT(*) FILTER (WHERE received_at IS NOT NULL)::int AS with_received_at
+        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)::int AS cores_owed,
+        COUNT(*) FILTER (WHERE status = 'returned_core')::int AS cores_returned,
+        COUNT(*) FILTER (WHERE status = 'sold')::int AS sold_not_returned
       FROM batteries;
-    `;
-
-    const { rows: sample } = await sql`
-      SELECT id, barcode, status::text AS status, mbs_invoice_id, received_at, sold_at
-      FROM batteries
-      ORDER BY created_at DESC
-      LIMIT 5;
     `;
 
     return NextResponse.json({
       ok: true,
-      columns,
-      byStatus,
-      mbsInfo: mbsInfo[0],
-      sample,
+      movementColumns,
+      enumValues,
+      coreSnapshot: coreSnapshot[0],
     });
   } catch (err: unknown) {
     return NextResponse.json(
