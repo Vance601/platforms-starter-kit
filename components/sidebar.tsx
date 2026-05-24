@@ -15,6 +15,7 @@ import {
   Battery,
   PackageCheck,
   PackagePlus,
+  FileText,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -126,6 +127,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/reconcile">
               <Battery className="mr-2 h-4 w-4" />
               Battery Audit
+            </Link>
+          </Button>
+          <Button variant={pathname === "/warranty-report" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/warranty-report">
+              <FileText className="mr-2 h-4 w-4" />
+              Warranty Report
             </Link>
           </Button>
         </div>
