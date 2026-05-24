@@ -93,17 +93,18 @@ export async function GET(req: NextRequest) {
       FROM batteries;
     `;
 
-    // Core accountability: cores owed to MBS vs cores returned.
-    // Every battery bought from MBS (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
+    // Core accountability: REGULAR cores only (warranty cores are tracked separately
+    // on the Warranty Report, so we exclude is_warranty = true here to avoid double-counting).
+    // Every regular battery bought from MBS (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
     // A core is recovered when its battery is marked status = 'returned_core'.
-    // Outstanding = owed - returned = cores not yet returned (money still owed back by MBS).
+    // Outstanding = owed - returned = regular cores not yet returned.
     const { rows: coreAccountability } = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)::int AS owed,
-        COUNT(*) FILTER (WHERE status = 'returned_core')::int AS returned,
+        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL AND is_warranty = false)::int AS owed,
+        COUNT(*) FILTER (WHERE status = 'returned_core' AND is_warranty = false)::int AS returned,
         (
-          COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)
-          - COUNT(*) FILTER (WHERE status = 'returned_core')
+          COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL AND is_warranty = false)
+          - COUNT(*) FILTER (WHERE status = 'returned_core' AND is_warranty = false)
         )::int AS outstanding
       FROM batteries;
     `;
