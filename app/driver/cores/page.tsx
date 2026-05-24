@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import DriverNav from "@/components/driver-nav";
 
 type SoldBattery = {
   id: string;
@@ -100,6 +101,7 @@ export default function DriverCoresPage() {
   return (
     <div className="min-h-screen bg-slate-900 px-4 py-6 text-slate-100">
       <div className="mx-auto max-w-md">
+        <DriverNav />
         <h1 className="mb-1 text-2xl font-bold text-white">Core Returns</h1>
         <p className="mb-5 text-sm text-slate-400">
           Mark sold batteries whose dead core you returned to MBS.
