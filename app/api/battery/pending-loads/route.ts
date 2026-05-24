@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     // Every load awaiting approval.
     //   - movement is a load:        to_status = 'on_truck'
     //   - not yet signed off:        approval_status = 'pending'
+    //   - battery still on the truck: b.status = 'on_truck' (the open warehouse->truck handoff)
     // Joins (all LEFT so a missing lookup never drops a row):
     //   batteries        -> barcode, serial, group size, type
     //   battery_models   -> code (group size, e.g. "27")
@@ -53,6 +54,7 @@ export async function GET(req: NextRequest) {
       LEFT JOIN drivers        d  ON d.id  = m.driver_id
       WHERE m.to_status = 'on_truck'
         AND m.approval_status = 'pending'
+        AND b.status = 'on_truck'
       ORDER BY m.occurred_at ASC;
     `;
 
