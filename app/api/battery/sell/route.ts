@@ -149,7 +149,10 @@ export async function POST(req: NextRequest) {
     }
 
     // --- Perform the sale ---
-    // 1) Mark the battery sold. Clear truck columns. On a warranty: cost = 0 + warranty fields.
+    // 1) Mark the battery sold. Clear truck columns.
+    //    On a warranty: set warranty fields but PRESERVE the battery's acquisition cost
+    //    (what we paid MBS). MBS reimburses us that cost; the admin warranty report reads it.
+    //    Customer-facing $0 is implied by is_warranty = true (revenue query excludes warranties).
     //    sold_by_id is intentionally NOT set (references users, not drivers).
     if (isWarranty) {
       await sql`
@@ -157,7 +160,6 @@ export async function POST(req: NextRequest) {
         SET status = 'sold',
             sold_at = NOW(),
             sold_on_call_number = ${callNumber},
-            cost = 0,
             is_warranty = true,
             warranty_replaces_battery_id = ${validatedReplacesId},
             warranty_note = ${warrantyNote},
