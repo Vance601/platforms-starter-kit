@@ -10,72 +10,80 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Columns on battery_movements (to confirm we can log a core return without a migration).
-    const { rows: movementColumns } = await sql`
+    // Does a locations table exist, and what are its columns?
+    const { rows: locationColumns } = await sql`
       SELECT column_name, data_type, is_nullable
       FROM information_schema.columns
-      WHERE table_name = 'battery_movements'
+      WHERE table_name = 'locations'
       ORDER BY ordinal_position;
     `;
 
-    // The battery_status enum values (confirm returned_core is present).
-    const { rows: enumValues } = await sql`
-      SELECT e.enumlabel AS value
-      FROM pg_type t
-      JOIN pg_enum e ON e.enumtypid = t.oid
-      WHERE t.typname = 'battery_status'
-      ORDER BY e.enumsortorder;
-    `;
+    // Sample the locations rows (the real warehouses, if any).
+    let locationSample: Record<string, unknown>[] = [];
+    try {
+      const r = await sql`SELECT * FROM locations LIMIT 20;`;
+      locationSample = r.rows;
+    } catch {
+      locationSample = [];
+    }
 
-    // Columns on drivers (to confirm how a driver is tied to a company).
-    const { rows: driverColumns } = await sql`
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_name = 'drivers'
-      ORDER BY ordinal_position;
-    `;
+    // Does a companies table exist? (locations usually belong to a company)
+    let companySample: Record<string, unknown>[] = [];
+    try {
+      const r = await sql`SELECT * FROM companies LIMIT 20;`;
+      companySample = r.rows;
+    } catch {
+      companySample = [];
+    }
 
-    // Columns on battery_types and battery_models (to find the readable type/model name).
-    const { rows: batteryTypeColumns } = await sql`
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_name = 'battery_types'
-      ORDER BY ordinal_position;
-    `;
-    const { rows: batteryModelColumns } = await sql`
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns
-      WHERE table_name = 'battery_models'
-      ORDER BY ordinal_position;
-    `;
-
-    // Sample a few rows so we can see what the actual type/model names look like.
-    const { rows: typeSample } = await sql`
-      SELECT * FROM battery_types LIMIT 5;
-    `;
-    const { rows: modelSample } = await sql`
-      SELECT * FROM battery_models LIMIT 5;
-    `;
-
-    // Core accountability snapshot with current data.
-    const { rows: coreSnapshot } = await sql`
+    // Batteries: how many have a location set vs null, grouped by location + status.
+    const { rows: batteryLocationBreakdown } = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL)::int AS cores_owed,
-        COUNT(*) FILTER (WHERE status = 'returned_core')::int AS cores_returned,
-        COUNT(*) FILTER (WHERE status = 'sold')::int AS sold_not_returned
-      FROM batteries;
+        b.location_id,
+        b.status::text AS status,
+        COUNT(*)::int AS count
+      FROM batteries b
+      GROUP BY b.location_id, b.status
+      ORDER BY b.location_id NULLS FIRST, b.status;
     `;
+
+    // Batteries: count by battery_model code (group size lives here: 24F, 34, 35, 48...).
+    const { rows: batteryByModelCode } = await sql`
+      SELECT
+        bm.code AS model_code,
+        bt.name AS type_name,
+        COUNT(*)::int AS count
+      FROM batteries b
+      LEFT JOIN battery_models bm ON bm.id = b.battery_model_id
+      LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
+      GROUP BY bm.code, bt.name
+      ORDER BY bm.code NULLS FIRST;
+    `;
+
+    // Trucks table columns + sample (for the owner-side assign-to-truck tool).
+    const { rows: truckColumns } = await sql`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'trucks'
+      ORDER BY ordinal_position;
+    `;
+    let truckSample: Record<string, unknown>[] = [];
+    try {
+      const r = await sql`SELECT * FROM trucks LIMIT 20;`;
+      truckSample = r.rows;
+    } catch {
+      truckSample = [];
+    }
 
     return NextResponse.json({
       ok: true,
-      movementColumns,
-      enumValues,
-      driverColumns,
-      batteryTypeColumns,
-      batteryModelColumns,
-      typeSample,
-      modelSample,
-      coreSnapshot: coreSnapshot[0],
+      locationColumns,
+      locationSample,
+      companySample,
+      batteryLocationBreakdown,
+      batteryByModelCode,
+      truckColumns,
+      truckSample,
     });
   } catch (err: unknown) {
     return NextResponse.json(
