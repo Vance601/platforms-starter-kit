@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DriverNav from "@/components/driver-nav";
 
 type Truck = {
   id: string;
@@ -80,6 +81,7 @@ export default function TransferPage() {
   return (
     <div style={wrap}>
       <div style={inner}>
+        <DriverNav />
         <h1 style={{ fontSize: 24, marginBottom: 4 }}>Claim a Truck</h1>
         <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
           Tap the truck you&apos;re taking out.
