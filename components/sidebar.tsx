@@ -135,6 +135,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               Warranty Report
             </Link>
           </Button>
+          <Button variant={pathname === "/driver-sales" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/driver-sales">
+              <BarChart3 className="mr-2 h-4 w-4" />
+              Driver Sales
+            </Link>
+          </Button>
         </div>
         <div className="px-3 py-1">
           <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
