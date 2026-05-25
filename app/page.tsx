@@ -202,4 +202,209 @@ export default function Dashboard() {
           {Array.isArray(pendingReorders) && pendingReorders.length > 0 && (
             <Link href="/auto-reorders">
               <Button variant="outline" className="text-base h-11">
-                <PackagePlus className="mr-
+                <PackagePlus className="mr-2 h-5 w-5" />
+                Auto-Reorders ({pendingReorders.length})
+              </Button>
+            </Link>
+          )}
+          <Link href="/batteries/new">
+            <Button className="text-base h-11">
+              <PlusCircle className="mr-2 h-5 w-5" />
+              Add Battery
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Summary Cards — real data from /api/inventory/summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+            <CardTitle className="text-base font-medium">Total Batteries</CardTitle>
+            <Package className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-3">
+            <div className="text-2xl font-bold">{totalBatteries}</div>
+            <p className="text-sm text-muted-foreground">
+              {inWarehouse} in warehouse, {onTruck} on trucks
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+            <CardTitle className="text-base font-medium">Locations</CardTitle>
+            <Building2 className="h-5 w-5 text-green-500" />
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-3">
+            {locationNames.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No stock yet</p>
+            ) : (
+              <div className="space-y-1">
+                {locationNames.map((loc) => (
+                  <div key={loc} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{loc}</span>
+                    <span className="font-semibold">{byLocation[loc]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+            <CardTitle className="text-base font-medium">In Warehouse</CardTitle>
+            <Warehouse className="h-5 w-5 text-emerald-500" />
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-3">
+            <div className="text-2xl font-bold">{inWarehouse}</div>
+            <p className="text-sm text-muted-foreground">Available to assign or sell</p>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+            <CardTitle className="text-base font-medium">On Trucks</CardTitle>
+            <Truck className="h-5 w-5 text-amber-500" />
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-3">
+            <div className="text-2xl font-bold">{onTruck}</div>
+            <p className="text-sm text-muted-foreground">Loaded on vehicles</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Main Dashboard Sections */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card className="shadow-sm">
+          <CardHeader className="py-2 px-4 flex items-center">
+            <BarChart3 className="mr-2 h-5 w-5" />
+            <div>
+              <CardTitle className="text-xl">Battery Inventory Review</CardTitle>
+              <CardDescription className="text-base">Battery inventory distribution across locations</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-2">
+            <div className="h-[300px]">
+              <Overview />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center py-2 px-4">
+            <AlertTriangle className="mr-2 h-5 w-5" />
+            <div>
+              <CardTitle className="text-xl">Critical Alerts</CardTitle>
+              <CardDescription className="text-base">Low battery inventory alerts</CardDescription>
+            </div>
+            <div className="ml-auto">
+              <Link href="/alerts">
+                <Button variant="outline" className="text-base h-10">
+                  View All
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-2">
+            <div className="space-y-3">
+              {Array.isArray(pendingReorders) && pendingReorders.length > 0 && (
+                <div className="flex items-start space-x-3 rounded-md border p-3 bg-amber-50/30">
+                  <PackagePlus className="mt-0.5 h-5 w-5 text-amber-500" />
+                  <div className="flex-1">
+                    <p className="text-base font-medium leading-none">Automatic Reorders Pending</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {pendingReorders.length} reorders need to be processed
+                    </p>
+                  </div>
+                  <Link href="/auto-reorders">
+                    <Button variant="outline" className="h-10 text-base">
+                      View Reorders
+                    </Button>
+                  </Link>
+                </div>
+              )}
+
+              {Array.isArray(alerts) &&
+                alerts
+                  .filter((alert) => alert.level === "Critical" && alert.status === "Active")
+                  .map((alert) => (
+                    <div key={alert.id} className="flex items-start space-x-3 rounded-md border p-3">
+                      <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
+                      <div className="flex-1">
+                        <p className="text-base font-medium leading-none">
+                          Low {alert.item} at {alert.location} Location
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Current: {alert.current} (Threshold: {alert.threshold}) • {alert.timestamp}
+                        </p>
+                      </div>
+                      <Button variant="outline" className="h-10 text-base" onClick={() => handleResolveClick(alert)}>
+                        <PlusCircle className="mr-2 h-5 w-5" />
+                        Add
+                      </Button>
+                    </div>
+                  ))}
+
+              {(!Array.isArray(alerts) ||
+                alerts.filter((alert) => alert.level === "Critical" && alert.status === "Active").length === 0) &&
+                (!Array.isArray(pendingReorders) || pendingReorders.length === 0) && (
+                  <div className="text-center py-4 text-muted-foreground">No critical alerts at this time</div>
+                )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Battery Inventory Section */}
+      <Card className="shadow-sm">
+        <CardHeader className="py-2 px-4 flex items-center">
+          <Battery className="mr-2 h-5 w-5" />
+          <div>
+            <CardTitle className="text-xl">Battery Inventory</CardTitle>
+            <CardDescription className="text-base">Current stock levels by battery type and location</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-2">
+          <BatteryInventoryChart />
+        </CardContent>
+      </Card>
+
+      {/* Driver Performance Section */}
+      <Card className="shadow-sm">
+        <CardHeader className="py-2 px-4 flex items-center">
+          <Truck className="mr-2 h-5 w-5" />
+          <div>
+            <CardTitle className="text-xl">Driver Performance</CardTitle>
+            <CardDescription className="text-base">Key performance indicators by driver</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-2">
+          <DriverPerformanceChart />
+        </CardContent>
+      </Card>
+
+      {/* Detailed Stats Section */}
+      <Card className="shadow-sm">
+        <CardHeader className="py-2 px-4 flex items-center">
+          <ClipboardList className="mr-2 h-5 w-5" />
+          <div>
+            <CardTitle className="text-xl">Detailed Battery Statistics</CardTitle>
+            <CardDescription className="text-base">Detailed view of battery inventory metrics</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-2">
+          <BatteryStats />
+        </CardContent>
+      </Card>
+
+      <AddInventoryModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        alert={selectedAlert}
+        onResolve={handleResolveAlert}
+      />
+    </div>
+  )
+}
