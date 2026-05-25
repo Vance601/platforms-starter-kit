@@ -16,7 +16,7 @@ import {
   PackageCheck,
   PackagePlus,
   FileText,
-  ClipboardCheck,
+  
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -141,7 +141,7 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
           </Button>
           <Button variant={pathname === "/admin/load-approvals" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/admin/load-approvals">
-              <ClipboardCheck className="mr-2 h-4 w-4" />
+              <PackageCheck className="mr-2 h-4 w-4" />
               Load Approvals
             </Link>
           </Button>
