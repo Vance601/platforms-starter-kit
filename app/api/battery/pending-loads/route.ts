@@ -1,36 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Owner gate: ?pw= must match MIGRATE_SECRET (same pattern as other owner pages).
-function ownerOk(req: NextRequest): boolean {
-  const pw = req.nextUrl.searchParams.get("pw") || "";
-  const secret = process.env.MIGRATE_SECRET || "";
-  return secret.length > 0 && pw === secret;
-}
-
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    if (!ownerOk(req)) {
+    const session = await auth();
+    if (!session?.user?.id) {
       return NextResponse.json(
-        { success: false, error: "Not authorized." },
+        { success: false, error: "Not signed in." },
         { status: 401 }
       );
     }
+    const role = session.user.role;
+    if (role !== "owner" && role !== "manager") {
+      return NextResponse.json(
+        { success: false, error: "You don't have permission to view load approvals." },
+        { status: 403 }
+      );
+    }
 
-    // Every load awaiting approval.
-    //   - movement is a load:        to_status = 'on_truck'
-    //   - not yet signed off:        approval_status = 'pending'
-    //   - battery still on the truck: b.status = 'on_truck' (the open warehouse->truck handoff)
-    // Joins (all LEFT so a missing lookup never drops a row):
-    //   batteries        -> barcode, serial, group size, type
-    //   battery_models   -> code (group size, e.g. "27")
-    //   battery_types    -> name (Alpha/Bravo/AMG/Tesla/Prius)
-    //   trucks           -> truck_number (destination truck on the movement)
-    //   drivers          -> name (who scanned it)
-    // occurred_at drives the 8-hour countdown on the page.
     const { rows } = await sql`
       SELECT
         m.id                AS movement_id,
@@ -58,17 +49,10 @@ export async function GET(req: NextRequest) {
       ORDER BY m.occurred_at ASC;
     `;
 
-    return NextResponse.json({
-      success: true,
-      count: rows.length,
-      loads: rows,
-    });
+    return NextResponse.json({ success: true, count: rows.length, loads: rows });
   } catch (err: unknown) {
     return NextResponse.json(
-      {
-        success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      },
+      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }
