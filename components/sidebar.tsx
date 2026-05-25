@@ -16,7 +16,6 @@ import {
   PackageCheck,
   PackagePlus,
   FileText,
-  
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -143,6 +142,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/admin/load-approvals">
               <PackageCheck className="mr-2 h-4 w-4" />
               Load Approvals
+            </Link>
+          </Button>
+          <Button variant={pathname === "/admin/assign-trucks" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/admin/assign-trucks">
+              <Truck className="mr-2 h-4 w-4" />
+              Assign to Trucks
             </Link>
           </Button>
         </div>
