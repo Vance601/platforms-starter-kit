@@ -40,7 +40,6 @@ export default function Dashboard() {
   const { inventory } = useInventoryStore()
   const autoReorderManager = useAutoReorderManager()
 
-  // Real battery summary from Neon (replaces the old mock useInventorySummary)
   const [summary, setSummary] = useState<Summary | null>(null)
   useEffect(() => {
     fetch("/api/inventory/summary", { cache: "no-store" })
@@ -57,10 +56,8 @@ export default function Dashboard() {
   const byLocation = summary?.byLocation ?? {}
   const locationNames = Object.keys(byLocation).sort()
 
-  // Update the pendingReorders handling with safety checks
   const pendingReorders = autoReorderManager?.getPendingReorders ? autoReorderManager.getPendingReorders() : []
 
-  // Critical alerts data with persistence
   const [alerts, setAlerts] = useState<any[]>(() => {
     if (typeof window !== "undefined") {
       const savedAlerts = localStorage.getItem("criticalAlerts")
@@ -167,4 +164,42 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedAlert, setSelectedAlert] = useState<any>(null)
 
-  const handleResolv
+  const handleResolveClick = (alert: any) => {
+    setSelectedAlert(alert)
+    setModalOpen(true)
+  }
+
+  const handleResolveAlert = (alertId: string, quantity: number, notes: string, location: string) => {
+    setAlerts((prevAlerts) => {
+      if (!Array.isArray(prevAlerts)) {
+        return []
+      }
+      const updatedAlerts = prevAlerts.map((alert) => {
+        if (alert.id === alertId) {
+          return {
+            ...alert,
+            status: "Resolved",
+            current: alert.current + quantity,
+            resolveNotes: notes,
+            resolveTimestamp: new Date().toISOString(),
+            resolveLocation: location,
+          }
+        }
+        return alert
+      })
+      if (typeof window !== "undefined") {
+        localStorage.setItem("criticalAlerts", JSON.stringify(updatedAlerts))
+      }
+      return updatedAlerts
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Dugger's Battery Program</h1>
+        <div className="flex items-center gap-2">
+          {Array.isArray(pendingReorders) && pendingReorders.length > 0 && (
+            <Link href="/auto-reorders">
+              <Button variant="outline" className="text-base h-11">
+                <PackagePlus className="mr-
