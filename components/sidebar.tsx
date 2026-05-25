@@ -148,4 +148,28 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
           <Button variant={pathname === "/admin/load-approvals" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/admin/load-approvals">
               <PackageCheck className="mr-2 h-4 w-4" />
-              L
+              Load Approvals
+            </Link>
+          </Button>
+          <Button variant={pathname === "/admin/assign-trucks" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/admin/assign-trucks">
+              <Truck className="mr-2 h-4 w-4" />
+              Assign to Trucks
+            </Link>
+          </Button>
+        </div>
+        <div className="px-3 py-1">
+          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
+          <Button variant={pathname === "/settings" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/settings">
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Sidebar
