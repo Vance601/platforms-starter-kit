@@ -16,6 +16,7 @@ import {
   PackageCheck,
   PackagePlus,
   FileText,
+  ClipboardCheck,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -39,7 +40,6 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               </Link>
             </Button>
 
-            {/* Assign tabs first */}
             <Button
               variant={pathname === "/receive-order" ? "secondary" : "ghost"}
               className="w-full justify-start"
@@ -61,7 +61,6 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               </Link>
             </Button>
 
-            {/* View tabs after */}
             <Button
               variant={pathname === "/inventory" ? "secondary" : "ghost"}
               className="w-full justify-start"
@@ -83,7 +82,6 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               </Link>
             </Button>
 
-            {/* Other tabs */}
             <Button variant={pathname === "/fleet" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
               <Link href="/fleet">
                 <Truck className="mr-2 h-4 w-4" />
@@ -139,6 +137,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/driver-sales">
               <BarChart3 className="mr-2 h-4 w-4" />
               Driver Sales
+            </Link>
+          </Button>
+          <Button variant={pathname === "/admin/load-approvals" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/admin/load-approvals">
+              <ClipboardCheck className="mr-2 h-4 w-4" />
+              Load Approvals
             </Link>
           </Button>
         </div>
