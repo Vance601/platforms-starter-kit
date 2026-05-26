@@ -15,6 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type Driver = {
   id: string
@@ -22,6 +29,11 @@ type Driver = {
   phone: string
   active: boolean
   company: string
+}
+
+type Company = {
+  id: string
+  name: string
 }
 
 function initials(name: string) {
@@ -39,6 +51,8 @@ export default function TeamPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [newName, setNewName] = useState("")
   const [newPhone, setNewPhone] = useState("")
+  const [newCompanyId, setNewCompanyId] = useState("")
+  const [companies, setCompanies] = useState<Company[]>([])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
 
@@ -60,8 +74,16 @@ export default function TeamPage() {
   function openDialog() {
     setNewName("")
     setNewPhone("")
+    setNewCompanyId("")
     setFormError("")
     setIsDialogOpen(true)
+    // Load companies for the picker (only need to fetch once, but harmless to refresh)
+    fetch("/api/companies", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.success && Array.isArray(j.companies)) setCompanies(j.companies)
+      })
+      .catch(() => {})
   }
 
   async function handleSave() {
@@ -74,12 +96,20 @@ export default function TeamPage() {
       setFormError("Cell number is required.")
       return
     }
+    if (!newCompanyId) {
+      setFormError("Please select a company.")
+      return
+    }
     setSaving(true)
     try {
       const res = await fetch("/api/drivers/add", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), phone: newPhone.trim() }),
+        body: JSON.stringify({
+          name: newName.trim(),
+          phone: newPhone.trim(),
+          companyId: newCompanyId,
+        }),
       })
       const j = await res.json()
       if (j?.success) {
@@ -227,6 +257,21 @@ export default function TeamPage() {
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
               />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Company</label>
+              <Select value={newCompanyId} onValueChange={setNewCompanyId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a company" />
+                </SelectTrigger>
+                <SelectContent>
+                  {companies.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {formError && <p className="text-sm text-red-600">{formError}</p>}
           </div>
