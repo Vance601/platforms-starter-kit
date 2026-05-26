@@ -5,10 +5,11 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Reads an uploaded MBS invoice image with Claude vision and returns structured
-// line items. It first loads the valid battery_types codes from the DB so the
-// model can only return types this system recognizes. Nothing is written to
-// inventory here — this route only proposes; the user reviews and confirms.
+// Reads an uploaded MBS invoice (image or PDF) with Claude vision and returns
+// structured line items, mapping MBS product codes (e.g. S24F-Express) to this
+// system's battery_models.code values (e.g. 24F). Reads valid codes from the DB
+// so the model can only map to real values. Nothing is written here — the user
+// reviews and confirms before any inventory is committed.
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -25,46 +26,49 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const imageBase64 = typeof body.imageBase64 === "string" ? body.imageBase64 : "";
+    const fileBase64 = typeof body.fileBase64 === "string" ? body.fileBase64 : "";
     const mediaType = typeof body.mediaType === "string" ? body.mediaType : "";
 
-    if (!imageBase64 || !mediaType) {
-      return NextResponse.json(
-        { success: false, error: "No image provided." },
-        { status: 400 }
-      );
+    if (!fileBase64 || !mediaType) {
+      return NextResponse.json({ success: false, error: "No file provided." }, { status: 400 });
     }
 
-    // Load valid battery type codes so the model maps to real values.
-    const { rows: typeRows } = await sql`SELECT code FROM battery_types ORDER BY code;`;
-    const validCodes = typeRows.map((r) => r.code as string);
+    // Valid model codes so the AI maps to real values only.
+    const { rows: modelRows } = await sql`SELECT code FROM battery_models ORDER BY code;`;
+    const validCodes = modelRows.map((r) => r.code as string);
 
     const isPdf = mediaType === "application/pdf";
     const sourceBlock = isPdf
-      ? {
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: imageBase64 },
-        }
-      : {
-          type: "image",
-          source: { type: "base64", media_type: mediaType, data: imageBase64 },
-        };
+      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: fileBase64 } };
 
-    const prompt = `You are reading an MBS Solutions battery invoice. Extract the data and return ONLY a JSON object, no other text, no markdown fences.
+    const prompt = `You are reading an MBS Solutions (Wrench Inc) battery invoice. Extract the data and return ONLY a JSON object — no prose, no markdown fences.
 
-The valid battery type codes are: ${validCodes.join(", ")}. Map each line item's battery to ONE of these exact codes. If a battery clearly doesn't match any, use "UNKNOWN".
+These are the valid battery model codes in our system:
+${validCodes.join(", ")}
 
-Return this exact JSON shape:
+MBS invoice line items use product codes that wrap our model code, with a prefix that indicates chemistry:
+- Prefix "MX-" or "MX" generally means AGM chemistry → map to the AGM version of the code (e.g. "MX-H6/L3/48-Express" → "48AGM", "MX-H5/L2/47-Express" → "47AGM").
+- Prefix "S-" or "S" generally means standard chemistry → map to the non-AGM code (e.g. "S-H6/L3/48-Express" → "48", "S24F-Express" → "24F").
+- "L1/H4/140R" style → strip wrapping, map to the core code ("140R").
+- "M14AUX" → "AUX14". "SX124R" → "124R". "MX51JIS" → "51".
+- Lines containing "Core" (e.g. "Core-BSI") are CORE CHARGES, not batteries — put these in "coreLines", not "lineItems".
+
+Return exactly:
 {
   "invoiceNumber": "string or empty",
+  "poNumber": "string or empty",
   "invoiceDate": "YYYY-MM-DD or empty",
   "totalAmount": number or 0,
   "lineItems": [
-    { "type": "one of the valid codes", "quantity": number, "reference": "any P.O. or name reference on that line, or empty" }
+    { "mbsCode": "the raw code from the invoice", "mappedCode": "one of our valid codes, or UNKNOWN", "quantity": number, "agm": true/false, "confident": true/false }
+  ],
+  "coreLines": [
+    { "description": "string", "quantity": number }
   ]
 }
 
-Be precise with quantities and the total. If unsure about a value, use empty string or 0 rather than guessing.`;
+Set "confident" to false for any line where the chemistry (AGM vs standard) or the code mapping is ambiguous. Be precise with quantities. If unsure of a value, use empty string or 0 rather than guessing.`;
 
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -75,13 +79,8 @@ Be precise with quantities and the total. If unsure about a value, use empty str
       },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        messages: [
-          {
-            role: "user",
-            content: [sourceBlock, { type: "text", text: prompt }],
-          },
-        ],
+        max_tokens: 2048,
+        messages: [{ role: "user", content: [sourceBlock, { type: "text", text: prompt }] }],
       }),
     });
 
@@ -109,23 +108,39 @@ Be precise with quantities and the total. If unsure about a value, use empty str
       );
     }
 
-    // Normalize and keep only line items with a valid known type and positive qty.
+    const validSet = new Set(validCodes.map((c) => c.toUpperCase()));
     const lineItems = Array.isArray(parsed.lineItems)
       ? parsed.lineItems
-          .map((li: any) => ({
-            type: typeof li.type === "string" ? li.type.trim().toUpperCase() : "",
-            quantity: Number(li.quantity) || 0,
-            reference: typeof li.reference === "string" ? li.reference.trim() : "",
-          }))
+          .map((li: any) => {
+            const mapped = typeof li.mappedCode === "string" ? li.mappedCode.trim().toUpperCase() : "";
+            return {
+              mbsCode: typeof li.mbsCode === "string" ? li.mbsCode.trim() : "",
+              mappedCode: validSet.has(mapped) ? mapped : (mapped || "UNKNOWN"),
+              quantity: Number(li.quantity) || 0,
+              agm: Boolean(li.agm),
+              confident: li.confident !== false && validSet.has(mapped),
+            };
+          })
           .filter((li: any) => li.quantity > 0)
+      : [];
+
+    const coreLines = Array.isArray(parsed.coreLines)
+      ? parsed.coreLines
+          .map((cl: any) => ({
+            description: typeof cl.description === "string" ? cl.description.trim() : "Core",
+            quantity: Number(cl.quantity) || 0,
+          }))
+          .filter((cl: any) => cl.quantity > 0)
       : [];
 
     return NextResponse.json({
       success: true,
       invoiceNumber: typeof parsed.invoiceNumber === "string" ? parsed.invoiceNumber : "",
+      poNumber: typeof parsed.poNumber === "string" ? parsed.poNumber : "",
       invoiceDate: typeof parsed.invoiceDate === "string" ? parsed.invoiceDate : "",
       totalAmount: Number(parsed.totalAmount) || 0,
       lineItems,
+      coreLines,
       validCodes,
     });
   } catch (err: unknown) {
