@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // Real driver roster, read live from Neon. Only active drivers, joined to
-// companies so we show a readable company name. Same pattern as the inventory
-// summary route — auth-gated, no hardcoded data.
+// companies for a readable name. Also returns company_id so the edit dialog
+// can pre-select the driver's current company.
 export async function GET() {
   try {
     const session = await auth();
@@ -22,7 +22,9 @@ export async function GET() {
       SELECT
         d.id          AS id,
         d.name        AS name,
+        d.phone       AS phone,
         d.active      AS active,
+        d.company_id  AS company_id,
         c.name        AS company
       FROM drivers d
       LEFT JOIN companies c ON c.id = d.company_id
@@ -33,7 +35,9 @@ export async function GET() {
     const drivers = rows.map((r) => ({
       id: r.id as string,
       name: (r.name as string) || "Unnamed",
+      phone: (r.phone as string) || "",
       active: Boolean(r.active),
+      companyId: (r.company_id as string) || "",
       company: (r.company as string) || "Unassigned",
     }));
 
