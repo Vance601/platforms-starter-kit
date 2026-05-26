@@ -2,14 +2,24 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, Users, Building2 } from "lucide-react"
+import { Search, Users, Building2, PlusCircle, Phone } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type Driver = {
   id: string
   name: string
+  phone: string
   active: boolean
   company: string
 }
@@ -25,7 +35,15 @@ export default function TeamPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
 
-  useEffect(() => {
+  // Add Driver dialog state
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [newName, setNewName] = useState("")
+  const [newPhone, setNewPhone] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState("")
+
+  function loadDrivers() {
+    setIsLoading(true)
     fetch("/api/drivers", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
@@ -33,14 +51,57 @@ export default function TeamPage() {
       })
       .catch(() => {})
       .finally(() => setIsLoading(false))
+  }
+
+  useEffect(() => {
+    loadDrivers()
   }, [])
+
+  function openDialog() {
+    setNewName("")
+    setNewPhone("")
+    setFormError("")
+    setIsDialogOpen(true)
+  }
+
+  async function handleSave() {
+    setFormError("")
+    if (!newName.trim()) {
+      setFormError("Name is required.")
+      return
+    }
+    if (!newPhone.trim()) {
+      setFormError("Cell number is required.")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/drivers/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), phone: newPhone.trim() }),
+      })
+      const j = await res.json()
+      if (j?.success) {
+        setIsDialogOpen(false)
+        loadDrivers()
+      } else {
+        setFormError(j?.error || "Could not add driver.")
+      }
+    } catch {
+      setFormError("Could not add driver.")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const query = searchQuery.toLowerCase()
   const filtered = query
     ? drivers.filter(
         (d) =>
           d.name.toLowerCase().includes(query) ||
-          d.company.toLowerCase().includes(query),
+          d.company.toLowerCase().includes(query) ||
+          d.phone.toLowerCase().includes(query),
       )
     : drivers
 
@@ -48,6 +109,10 @@ export default function TeamPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Team</h1>
+        <Button onClick={openDialog}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add Driver
+        </Button>
       </div>
 
       {isLoading ? (
@@ -104,6 +169,12 @@ export default function TeamPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
+                        {driver.phone && (
+                          <div className="hidden md:flex items-center text-sm text-muted-foreground">
+                            <Phone className="mr-1 h-3 w-3" />
+                            {driver.phone}
+                          </div>
+                        )}
                         <Badge variant={driver.active ? "default" : "outline"}>
                           {driver.active ? "Active" : "Inactive"}
                         </Badge>
@@ -126,6 +197,49 @@ export default function TeamPage() {
           </Card>
         </>
       )}
+
+      {/* Add Driver dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Add Driver</DialogTitle>
+            <DialogDescription>Add a new active driver to the roster.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <label htmlFor="driver-name" className="text-sm font-medium">
+                Name
+              </label>
+              <Input
+                id="driver-name"
+                placeholder="Driver full name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor="driver-phone" className="text-sm font-medium">
+                Cell Number
+              </label>
+              <Input
+                id="driver-phone"
+                placeholder="(555) 123-4567"
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+              />
+            </div>
+            {formError && <p className="text-sm text-red-600">{formError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
