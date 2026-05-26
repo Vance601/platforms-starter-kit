@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, Users, Building2, PlusCircle, Phone } from "lucide-react"
+import { Search, Users, Building2, PlusCircle, Phone, Pencil, Trash2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ type Driver = {
   phone: string
   active: boolean
   company: string
+  companyId: string
 }
 
 type Company = {
@@ -46,15 +47,20 @@ export default function TeamPage() {
   const [drivers, setDrivers] = useState<Driver[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
-
-  // Add Driver dialog state
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [newName, setNewName] = useState("")
-  const [newPhone, setNewPhone] = useState("")
-  const [newCompanyId, setNewCompanyId] = useState("")
   const [companies, setCompanies] = useState<Company[]>([])
+
+  // Add/Edit dialog state
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null) // null = adding, id = editing
+  const [formName, setFormName] = useState("")
+  const [formPhone, setFormPhone] = useState("")
+  const [formCompanyId, setFormCompanyId] = useState("")
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
+
+  // Remove confirm dialog state
+  const [removeTarget, setRemoveTarget] = useState<Driver | null>(null)
+  const [removing, setRemoving] = useState(false)
 
   function loadDrivers() {
     setIsLoading(true)
@@ -67,17 +73,7 @@ export default function TeamPage() {
       .finally(() => setIsLoading(false))
   }
 
-  useEffect(() => {
-    loadDrivers()
-  }, [])
-
-  function openDialog() {
-    setNewName("")
-    setNewPhone("")
-    setNewCompanyId("")
-    setFormError("")
-    setIsDialogOpen(true)
-    // Load companies for the picker (only need to fetch once, but harmless to refresh)
+  function loadCompanies() {
     fetch("/api/companies", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
@@ -86,42 +82,87 @@ export default function TeamPage() {
       .catch(() => {})
   }
 
+  useEffect(() => {
+    loadDrivers()
+  }, [])
+
+  function openAddDialog() {
+    setEditingId(null)
+    setFormName("")
+    setFormPhone("")
+    setFormCompanyId("")
+    setFormError("")
+    setIsDialogOpen(true)
+    loadCompanies()
+  }
+
+  function openEditDialog(driver: Driver) {
+    setEditingId(driver.id)
+    setFormName(driver.name)
+    setFormPhone(driver.phone)
+    setFormCompanyId(driver.companyId)
+    setFormError("")
+    setIsDialogOpen(true)
+    loadCompanies()
+  }
+
   async function handleSave() {
     setFormError("")
-    if (!newName.trim()) {
+    if (!formName.trim()) {
       setFormError("Name is required.")
       return
     }
-    if (!newPhone.trim()) {
+    if (!formPhone.trim()) {
       setFormError("Cell number is required.")
       return
     }
-    if (!newCompanyId) {
+    if (!formCompanyId) {
       setFormError("Please select a company.")
       return
     }
     setSaving(true)
     try {
-      const res = await fetch("/api/drivers/add", {
+      const endpoint = editingId ? "/api/drivers/update" : "/api/drivers/add"
+      const payload = editingId
+        ? { id: editingId, name: formName.trim(), phone: formPhone.trim(), companyId: formCompanyId }
+        : { name: formName.trim(), phone: formPhone.trim(), companyId: formCompanyId }
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newName.trim(),
-          phone: newPhone.trim(),
-          companyId: newCompanyId,
-        }),
+        body: JSON.stringify(payload),
       })
       const j = await res.json()
       if (j?.success) {
         setIsDialogOpen(false)
         loadDrivers()
       } else {
-        setFormError(j?.error || "Could not add driver.")
+        setFormError(j?.error || "Could not save driver.")
       }
     } catch {
-      setFormError("Could not add driver.")
+      setFormError("Could not save driver.")
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    if (!removeTarget) return
+    setRemoving(true)
+    try {
+      const res = await fetch("/api/drivers/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: removeTarget.id }),
+      })
+      const j = await res.json()
+      if (j?.success) {
+        setRemoveTarget(null)
+        loadDrivers()
+      }
+    } catch {
+      // leave dialog open on failure
+    } finally {
+      setRemoving(false)
     }
   }
 
@@ -139,7 +180,7 @@ export default function TeamPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Team</h1>
-        <Button onClick={openDialog}>
+        <Button onClick={openAddDialog}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Add Driver
         </Button>
@@ -208,6 +249,19 @@ export default function TeamPage() {
                         <Badge variant={driver.active ? "default" : "outline"}>
                           {driver.active ? "Active" : "Inactive"}
                         </Badge>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => openEditDialog(driver)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRemoveTarget(driver)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))
@@ -228,12 +282,14 @@ export default function TeamPage() {
         </>
       )}
 
-      {/* Add Driver dialog */}
+      {/* Add / Edit dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Add Driver</DialogTitle>
-            <DialogDescription>Add a new active driver to the roster.</DialogDescription>
+            <DialogTitle>{editingId ? "Edit Driver" : "Add Driver"}</DialogTitle>
+            <DialogDescription>
+              {editingId ? "Update this driver's details." : "Add a new active driver to the roster."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
@@ -243,8 +299,8 @@ export default function TeamPage() {
               <Input
                 id="driver-name"
                 placeholder="Driver full name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -254,13 +310,13 @@ export default function TeamPage() {
               <Input
                 id="driver-phone"
                 placeholder="(555) 123-4567"
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Company</label>
-              <Select value={newCompanyId} onValueChange={setNewCompanyId}>
+              <Select value={formCompanyId} onValueChange={setFormCompanyId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a company" />
                 </SelectTrigger>
@@ -281,6 +337,27 @@ export default function TeamPage() {
             </Button>
             <Button onClick={handleSave} disabled={saving}>
               {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove confirm dialog */}
+      <Dialog open={removeTarget !== null} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Remove Driver</DialogTitle>
+            <DialogDescription>
+              Remove {removeTarget?.name} from the active roster? Their record is kept for history and
+              can be restored later.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveTarget(null)} disabled={removing}>
+              Cancel
+            </Button>
+            <Button onClick={handleRemove} disabled={removing} className="bg-red-600 hover:bg-red-700">
+              {removing ? "Removing…" : "Remove"}
             </Button>
           </DialogFooter>
         </DialogContent>
