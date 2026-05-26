@@ -5,10 +5,6 @@ import { auth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Default company for new drivers: Duggers PHX / ERS (slug = 'phx').
-// Resolved by slug so it keeps working even if the company id ever changes.
-const DEFAULT_COMPANY_SLUG = "phx";
-
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -22,6 +18,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const phone = typeof body.phone === "string" ? body.phone.trim() : "";
+    const companyId = typeof body.companyId === "string" ? body.companyId.trim() : "";
 
     if (!name) {
       return NextResponse.json(
@@ -35,17 +32,23 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    if (!companyId) {
+      return NextResponse.json(
+        { success: false, error: "Company is required." },
+        { status: 400 }
+      );
+    }
 
+    // Verify the company exists before inserting.
     const { rows: companyRows } = await sql`
-      SELECT id FROM companies WHERE slug = ${DEFAULT_COMPANY_SLUG} LIMIT 1;
+      SELECT id FROM companies WHERE id = ${companyId} LIMIT 1;
     `;
     if (companyRows.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Default company not found." },
-        { status: 500 }
+        { success: false, error: "Selected company not found." },
+        { status: 400 }
       );
     }
-    const companyId = companyRows[0].id as string;
 
     const { rows } = await sql`
       INSERT INTO drivers (id, name, phone, company_id, active, created_at, updated_at)
