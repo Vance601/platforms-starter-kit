@@ -60,6 +60,8 @@ export async function GET() {
 }
 
 // POST — assign one battery to one truck. Auto-approved (admin is the verifier).
+// Now also captures the truck's current driver onto the battery and the movement
+// row, so a battery on a truck is always traceable to a person.
 export async function POST(req: NextRequest) {
   try {
     const session = await auth();
@@ -89,8 +91,10 @@ export async function POST(req: NextRequest) {
 
     const assigner = session.user.name || session.user.email || session.user.id;
 
+    // Pull the truck AND its current driver, so we can stamp the driver too.
     const { rows: truckRows } = await sql`
-      SELECT id, truck_number FROM trucks WHERE id = ${truckId} LIMIT 1;
+      SELECT id, truck_number, current_driver_id
+      FROM trucks WHERE id = ${truckId} LIMIT 1;
     `;
     if (truckRows.length === 0) {
       return NextResponse.json(
@@ -99,6 +103,7 @@ export async function POST(req: NextRequest) {
       );
     }
     const truck = truckRows[0];
+    const driverId: string | null = truck.current_driver_id ?? null;
 
     const { rows: batteryRows } = await sql`
       SELECT id, barcode, status, truck_id FROM batteries WHERE id = ${batteryId} LIMIT 1;
@@ -117,11 +122,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Set status + truck + driver on the battery in one update.
     await sql`
       UPDATE batteries
       SET status = 'on_truck',
           truck_id = ${truck.id},
-          current_truck_id = ${truck.id}
+          current_truck_id = ${truck.id},
+          current_driver_id = ${driverId}
       WHERE id = ${battery.id};
     `;
 
@@ -132,7 +139,7 @@ export async function POST(req: NextRequest) {
          approval_status, approved_at, recorded_by_id, notes)
       VALUES
         (${movementId}, ${battery.id}, 'in_warehouse', 'on_truck',
-         ${truck.id}, NULL,
+         ${truck.id}, ${driverId},
          'approved', now(), ${session.user.id},
          ${`Assigned to truck #${truck.truck_number} by admin ${assigner}`});
     `;
