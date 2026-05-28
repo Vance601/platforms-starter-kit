@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { PlusCircle, Truck as TruckIcon, Battery, RotateCcw, User, Warehouse } from "lucide-react"
+import { PlusCircle, Truck as TruckIcon, Battery, RotateCcw, User, Warehouse, Activity } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -37,15 +37,49 @@ type LocationOverview = {
   breakdown: { code: string; n: number }[]
 }
 
+type FeedItem = {
+  id: string
+  at: string | null
+  kind: "load" | "sell" | "core_return_battery" | "core_returned" | "core_kept" | "other"
+  headline: string
+  detail: string | null
+}
+
 const COMPANIES = [
   { slug: "phx",    label: "Duggers PHX / ERS" },
   { slug: "abq",    label: "Duggers ABQ" },
   { slug: "tucson", label: "Express Roadside Tucson" },
 ]
 
+function relativeTime(iso: string | null): string {
+  if (!iso) return ""
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ""
+  const secs = Math.max(0, Math.floor((Date.now() - t) / 1000))
+  if (secs < 60)   return `${secs}s ago`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60)   return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24)    return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+function kindColor(kind: FeedItem["kind"]): string {
+  switch (kind) {
+    case "load":                return "bg-amber-50 border-amber-200 text-amber-900"
+    case "sell":                return "bg-blue-50 border-blue-200 text-blue-900"
+    case "core_return_battery": return "bg-emerald-50 border-emerald-200 text-emerald-900"
+    case "core_returned":       return "bg-emerald-50 border-emerald-200 text-emerald-900"
+    case "core_kept":           return "bg-rose-50 border-rose-200 text-rose-900"
+    default:                    return "bg-slate-50 border-slate-200 text-slate-800"
+  }
+}
+
 export default function FleetPage() {
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [locations, setLocations] = useState<LocationOverview[]>([])
+  const [feed, setFeed] = useState<FeedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -57,22 +91,27 @@ export default function FleetPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
 
-  function loadAll() {
-    setIsLoading(true)
+  function loadAll(showSpinner = true) {
+    if (showSpinner) setIsLoading(true)
     Promise.all([
       fetch("/api/trucks/overview",    { cache: "no-store" }).then((r) => r.json()),
       fetch("/api/locations/overview", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/activity/feed",      { cache: "no-store" }).then((r) => r.json()),
     ])
-      .then(([truckJson, locJson]) => {
-        if (truckJson?.success && Array.isArray(truckJson.trucks))    setTrucks(truckJson.trucks)
-        if (locJson?.success   && Array.isArray(locJson.locations))   setLocations(locJson.locations)
+      .then(([truckJson, locJson, feedJson]) => {
+        if (truckJson?.success && Array.isArray(truckJson.trucks))   setTrucks(truckJson.trucks)
+        if (locJson?.success   && Array.isArray(locJson.locations))  setLocations(locJson.locations)
+        if (feedJson?.success  && Array.isArray(feedJson.feed))      setFeed(feedJson.feed)
       })
       .catch(() => {})
-      .finally(() => setIsLoading(false))
+      .finally(() => { if (showSpinner) setIsLoading(false) })
   }
 
   useEffect(() => {
-    loadAll()
+    loadAll(true)
+    // Auto-refresh every 15 seconds without spinner so it feels live.
+    const t = setInterval(() => loadAll(false), 15000)
+    return () => clearInterval(t)
   }, [])
 
   function openDialog() {
@@ -105,7 +144,7 @@ export default function FleetPage() {
       const j = await res.json()
       if (j?.success) {
         setIsDialogOpen(false)
-        loadAll()
+        loadAll(false)
       } else {
         setFormError(j?.error || "Could not add truck.")
       }
@@ -264,6 +303,7 @@ export default function FleetPage() {
             </div>
           )}
 
+          {/* Warehouse Locations */}
           <div className="mt-8">
             <div className="mb-3 flex items-center gap-2">
               <Warehouse className="h-5 w-5 text-muted-foreground" />
@@ -304,7 +344,6 @@ export default function FleetPage() {
                             <div className="text-xl font-semibold mt-1">{l.returned_cores}</div>
                           </div>
                         </div>
-
                         {sortedBreak.length > 0 ? (
                           <div className="pt-1">
                             <p className="text-xs text-muted-foreground mb-1">By model</p>
@@ -326,9 +365,49 @@ export default function FleetPage() {
               </div>
             )}
           </div>
+
+          {/* Live Activity Feed */}
+          <div className="mt-8">
+            <div className="mb-3 flex items-center gap-2">
+              <Activity className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-semibold tracking-tight">Live Activity</h2>
+              <span className="text-xs text-muted-foreground">refreshes every 15s</span>
+            </div>
+            {feed.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No recent activity. As drivers load, sell, and resolve cores, events will appear here.
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="divide-y">
+                    {feed.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className={`flex items-start justify-between gap-3 p-4 border-l-4 ${kindColor(ev.kind)}`}
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{ev.headline}</p>
+                          {ev.detail ? (
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{ev.detail}</p>
+                          ) : null}
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5">
+                          {relativeTime(ev.at)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </>
       )}
 
+      {/* Add Truck dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -338,30 +417,15 @@ export default function FleetPage() {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <label htmlFor="truck-number" className="text-sm font-medium">Truck Number *</label>
-              <Input
-                id="truck-number"
-                placeholder="e.g. 138"
-                value={newNumber}
-                onChange={(e) => setNewNumber(e.target.value)}
-              />
+              <Input id="truck-number" placeholder="e.g. 138" value={newNumber} onChange={(e) => setNewNumber(e.target.value)} />
             </div>
             <div className="grid gap-2">
               <label htmlFor="truck-year-model" className="text-sm font-medium">Year / Model</label>
-              <Input
-                id="truck-year-model"
-                placeholder="e.g. 2024 Ford Maverick"
-                value={newYearModel}
-                onChange={(e) => setNewYearModel(e.target.value)}
-              />
+              <Input id="truck-year-model" placeholder="e.g. 2024 Ford Maverick" value={newYearModel} onChange={(e) => setNewYearModel(e.target.value)} />
             </div>
             <div className="grid gap-2">
               <label htmlFor="truck-vin" className="text-sm font-medium">VIN (last 5)</label>
-              <Input
-                id="truck-vin"
-                placeholder="e.g. 87849"
-                value={newVinLast5}
-                onChange={(e) => setNewVinLast5(e.target.value)}
-              />
+              <Input id="truck-vin" placeholder="e.g. 87849" value={newVinLast5} onChange={(e) => setNewVinLast5(e.target.value)} />
             </div>
             <div className="grid gap-2">
               <label htmlFor="truck-company" className="text-sm font-medium">Company</label>
@@ -379,12 +443,8 @@ export default function FleetPage() {
             {formError && <p className="text-sm text-red-600">{formError}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving…" : "Save"}
-            </Button>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
