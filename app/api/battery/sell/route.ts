@@ -92,8 +92,9 @@ export async function POST(req: NextRequest) {
     const truck = truckRows[0];
 
     // The battery must exist, be on_truck, on THIS driver's truck, same company.
+    // NOTE: location_id added to the SELECT so we can stamp the core record.
     const { rows: batteryRows } = await sql`
-      SELECT id, barcode, status, company_id, truck_id
+      SELECT id, barcode, status, company_id, location_id, truck_id
       FROM batteries
       WHERE id = ${batteryId};
     `;
@@ -150,10 +151,6 @@ export async function POST(req: NextRequest) {
 
     // --- Perform the sale ---
     // 1) Mark the battery sold. Clear truck columns.
-    //    On a warranty: set warranty fields but PRESERVE the battery's acquisition cost
-    //    (what we paid MBS). MBS reimburses us that cost; the admin warranty report reads it.
-    //    Customer-facing $0 is implied by is_warranty = true (revenue query excludes warranties).
-    //    sold_by_id is intentionally NOT set (references users, not drivers).
     if (isWarranty) {
       await sql`
         UPDATE batteries
@@ -191,6 +188,19 @@ export async function POST(req: NextRequest) {
       VALUES
         (${movementId}, ${battery.id}, 'on_truck', 'sold',
          ${truck.id}, ${driverId}, ${callNumber}, ${movementNote});
+    `;
+
+    // 3) Create the OWED core record. Both regular AND warranty sales owe a core
+    //    (the old/failed battery should come back to MBS). Linked by battery_id;
+    //    sale_id left NULL because sales aren't recorded as separate rows yet.
+    const coreId = crypto.randomUUID();
+    await sql`
+      INSERT INTO core_returns
+        (id, battery_id, company_id, location_id, status, notes)
+      VALUES
+        (${coreId}, ${battery.id}, ${battery.company_id}, ${battery.location_id},
+         'owed',
+         ${`Core owed from ${isWarranty ? "warranty " : ""}sale on call #${callNumber} by ${driver.name}`});
     `;
 
     return NextResponse.json({
