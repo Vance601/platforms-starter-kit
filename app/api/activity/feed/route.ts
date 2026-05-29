@@ -68,11 +68,11 @@ export async function GET() {
       const driver = (m.driver_name as string | null) || "A driver";
       const barcode = (m.barcode as string | null) || "battery";
       const truck = m.truck_number ? `truck #${m.truck_number}` : "a truck";
-      const from = m.from_status as string;
-      const to   = m.to_status as string;
+      const from = m.from_status as string | null;
+      const to   = m.to_status as string | null;
 
       let kind: FeedItem["kind"] = "other";
-      let headline = `${from} → ${to}`;
+      let headline = `${from ?? "—"} → ${to ?? "—"}`;
       let detail: string | null = (m.notes as string | null) || null;
 
       if (from === "in_warehouse" && to === "on_truck") {
@@ -85,6 +85,13 @@ export async function GET() {
       } else if (from === "sold" && to === "returned_core") {
         kind = "core_return_battery";
         headline = `${driver} returned core ${barcode} to MBS`;
+      } else if (from == null && to === "in_warehouse") {
+        // Battery received into warehouse from MBS (no prior status).
+        kind = "other";
+        const invMatch = (m.notes as string | null)?.match(/invoice\s+([^\s|]+)/i);
+        const invShort = invMatch ? invMatch[1].slice(0, 8) : null;
+        headline = `${barcode} received into warehouse`;
+        detail = invShort ? `MBS invoice ${invShort}…` : detail;
       }
 
       events.push({
