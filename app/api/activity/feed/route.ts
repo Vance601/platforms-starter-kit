@@ -21,19 +21,19 @@ export async function GET() {
     const { rows: movements } = await sql`
       SELECT
         bm.id,
-        bm.created_at AS at,
+        bm.occurred_at AS at,
         bm.from_status,
         bm.to_status,
         bm.call_reference,
-        bm.notes,
-        d.name AS driver_name,
         b.barcode AS barcode,
-        t.truck_number AS truck_number
+        d.name AS driver_name,
+        t.truck_number AS truck_number,
+        bm.notes
       FROM battery_movements bm
       LEFT JOIN drivers   d ON d.id = bm.driver_id
       LEFT JOIN batteries b ON b.id = bm.battery_id
       LEFT JOIN trucks    t ON t.id = COALESCE(bm.to_truck_id, bm.from_truck_id)
-      ORDER BY bm.created_at DESC NULLS LAST
+      ORDER BY bm.occurred_at DESC NULLS LAST
       LIMIT 30;
     `;
 
@@ -122,7 +122,7 @@ export async function GET() {
     return NextResponse.json({ success: true, feed });
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { success: false, feed: [], error: err instanceof Error ? err.message : "unknown error" },
       { status: 500 }
     );
   }
