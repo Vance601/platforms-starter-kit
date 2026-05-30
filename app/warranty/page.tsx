@@ -77,11 +77,66 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ model_code: "", raw_description: "", units: 1 }]);
   const [fileObj, setFileObj] = useState<File | null>(null);
+  const [fileBase64, setFileBase64] = useState("");
+  const [mediaType, setMediaType] = useState("");
+  const [validCodes, setValidCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
   const totalUnits = lines.reduce((s, l) => s + (Number(l.units) || 0), 0);
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setFileObj(file);
+    setMediaType(file.type);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setFileBase64(result.split(",")[1] || "");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function scanMemo() {
+    setErr("");
+    setMsg("");
+    if (!fileBase64 || !mediaType) {
+      setErr("Choose a memo photo first.");
+      return;
+    }
+    setScanning(true);
+    try {
+      const res = await fetch("/api/receive-order/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileBase64, mediaType }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Scan failed");
+      if (data.invoiceNumber && !memoNumber) setMemoNumber(data.invoiceNumber);
+      if (Array.isArray(data.validCodes)) setValidCodes(data.validCodes);
+      const scanned: Line[] = (data.lineItems || []).map(
+        (li: { mbsCode?: string; mappedCode?: string; quantity?: number }) => ({
+          model_code: li.mappedCode || "",
+          raw_description: li.mbsCode || "",
+          units: Number(li.quantity) || 1,
+        })
+      );
+      if (scanned.length) {
+        setLines(scanned);
+        setMsg(`Read ${scanned.length} line(s) from the memo. Review and fix anything the reader got wrong, then Save. (Handwriting can be misread.)`);
+      } else {
+        setErr("No warranty lines were read. Enter them by hand below.");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Scan failed — enter lines by hand.");
+    } finally {
+      setScanning(false);
+    }
+  }
 
   function updateLine(i: number, field: keyof Line, val: string | number) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [field]: val } : l)));
@@ -126,7 +181,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
           notes,
           fileUrl,
           fileName,
-          lines: lines.filter((l) => l.units > 0),
+          lines: lines.filter((l) => l.units > 0 && l.model_code.trim() !== ""),
         }),
       });
       const data = await res.json();
@@ -136,6 +191,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       setNotes("");
       setLines([{ model_code: "", raw_description: "", units: 1 }]);
       setFileObj(null);
+      setFileBase64("");
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Unknown error");
@@ -169,10 +225,19 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
             {locations.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.name}</option>)}
           </select>
         </label>
-        <label style={{ gridColumn: "1 / -1" }}>Pickup memo file (optional)
-          <input type="file" accept="application/pdf,image/*" onChange={(e) => setFileObj(e.target.files?.[0] || null)}
-            style={{ display: "block", marginTop: 4 }} />
-        </label>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label>Pickup memo photo (scan to auto-fill lines)</label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
+            <input type="file" accept="application/pdf,image/*" onChange={onFileChange} />
+            <button onClick={scanMemo} disabled={scanning || !fileBase64}
+              style={{ padding: "8px 16px", background: "#0066cc", color: "white", border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {scanning ? "Reading..." : "Read Memo"}
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+            Handwritten memos can be misread — always review the lines below before saving.
+          </p>
+        </div>
         <label style={{ gridColumn: "1 / -1" }}>Notes (optional)
           <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
             style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }} />
