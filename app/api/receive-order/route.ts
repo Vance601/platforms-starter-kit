@@ -194,7 +194,6 @@ export async function POST(req: NextRequest) {
       }
       const companyId = locations[0].company_id;
 
-      // Duplicate guard: reject if this receipt number already exists for this company.
       const { rows: existing } = await sql`
         SELECT id FROM delivery_receipts
         WHERE receipt_number = ${receiptNumber} AND company_id = ${companyId}
@@ -312,6 +311,171 @@ export async function POST(req: NextRequest) {
         barcode,
         batteryId,
         loggedCount,
+      });
+    }
+
+    // ── Warranty pickup (sending warranties back to MBS) — NO inventory change ──
+
+    if (action === "createWarrantyPickup") {
+      const { locationId, supplier, memoNumber, pickupDate, fileUrl, fileName, notes, lines } = body;
+
+      if (!locationId || !memoNumber) {
+        return NextResponse.json(
+          { error: "Missing required fields: locationId, memoNumber" },
+          { status: 400 }
+        );
+      }
+
+      const { rows: locations } = await sql`
+        SELECT company_id FROM locations WHERE id = ${locationId};
+      `;
+      if (locations.length === 0) {
+        return NextResponse.json({ error: "Location not found" }, { status: 404 });
+      }
+      const companyId = locations[0].company_id;
+
+      // Duplicate guard.
+      const { rows: existing } = await sql`
+        SELECT id FROM warranty_pickups
+        WHERE memo_number = ${memoNumber} AND company_id = ${companyId}
+        LIMIT 1;
+      `;
+      if (existing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Warranty pickup ${memoNumber} already exists for this company. It was not added again.`,
+            duplicate: true,
+            existingId: existing[0].id,
+          },
+          { status: 409 }
+        );
+      }
+
+      const lineArr: { model_code?: string; raw_description?: string; units: number }[] =
+        Array.isArray(lines) ? lines : [];
+      const totalUnits = lineArr.reduce((s, l) => s + (Number(l.units) || 0), 0);
+
+      const pickupId = crypto.randomUUID();
+      const parsedDate = pickupDate ? new Date(pickupDate) : new Date();
+
+      await sql`
+        INSERT INTO warranty_pickups
+          (id, company_id, location_id, supplier, memo_number, pickup_date,
+           total_units, file_url, file_name, notes, uploaded_by_id)
+        VALUES
+          (${pickupId}, ${companyId}, ${locationId}, ${supplier ?? null},
+           ${memoNumber}, ${parsedDate.toISOString()}, ${totalUnits},
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+      `;
+
+      for (const l of lineArr) {
+        await sql`
+          INSERT INTO warranty_pickup_lines
+            (warranty_pickup_id, raw_description, model_code, units)
+          VALUES
+            (${pickupId}, ${l.raw_description ?? null}, ${l.model_code ?? null}, ${Number(l.units) || 0});
+        `;
+      }
+
+      return NextResponse.json({
+        success: true,
+        warrantyPickupId: pickupId,
+        memoNumber,
+        totalUnits,
+      });
+    }
+
+    // ── MBS credit memo (applied against a warranty pickup) — NO inventory change ──
+    // Warranty cores should net to $0. If MBS charged cores, flag it.
+
+    if (action === "applyWarrantyCreditMemo") {
+      const {
+        locationId,
+        warrantyPickupId,
+        memoNumber,
+        memoDate,
+        coreCharges,
+        coreCredits,
+        warrantyCount,
+        fileUrl,
+        fileName,
+        notes,
+        lines,
+      } = body;
+
+      if (!locationId || !memoNumber) {
+        return NextResponse.json(
+          { error: "Missing required fields: locationId, memoNumber" },
+          { status: 400 }
+        );
+      }
+
+      const { rows: locations } = await sql`
+        SELECT company_id FROM locations WHERE id = ${locationId};
+      `;
+      if (locations.length === 0) {
+        return NextResponse.json({ error: "Location not found" }, { status: 404 });
+      }
+      const companyId = locations[0].company_id;
+
+      // Duplicate guard.
+      const { rows: existing } = await sql`
+        SELECT id FROM warranty_credit_memos
+        WHERE memo_number = ${memoNumber} AND company_id = ${companyId}
+        LIMIT 1;
+      `;
+      if (existing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Credit memo ${memoNumber} already exists for this company. It was not added again.`,
+            duplicate: true,
+            existingId: existing[0].id,
+          },
+          { status: 409 }
+        );
+      }
+
+      const charged = Number(coreCharges) || 0;
+      const credited = Number(coreCredits) || 0;
+      const net = charged - credited;
+      // Warranty cores should net to 0. Anything left charged is a flag.
+      const flagged = net > 0;
+
+      const memoId = crypto.randomUUID();
+      const parsedDate = memoDate ? new Date(memoDate) : new Date();
+
+      await sql`
+        INSERT INTO warranty_credit_memos
+          (id, company_id, location_id, warranty_pickup_id, memo_number, memo_date,
+           warranty_count, core_charges, core_credits, core_net, flagged,
+           file_url, file_name, notes, uploaded_by_id)
+        VALUES
+          (${memoId}, ${companyId}, ${locationId}, ${warrantyPickupId ?? null},
+           ${memoNumber}, ${parsedDate.toISOString()}, ${warrantyCount ?? null},
+           ${charged}, ${credited}, ${net}, ${flagged},
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+      `;
+
+      const lineArr: { model_code?: string; raw_description?: string; units: number }[] =
+        Array.isArray(lines) ? lines : [];
+      for (const l of lineArr) {
+        await sql`
+          INSERT INTO warranty_credit_memo_lines
+            (credit_memo_id, raw_description, model_code, units)
+          VALUES
+            (${memoId}, ${l.raw_description ?? null}, ${l.model_code ?? null}, ${Number(l.units) || 0});
+        `;
+      }
+
+      return NextResponse.json({
+        success: true,
+        creditMemoId: memoId,
+        memoNumber,
+        coreNet: net,
+        flagged,
+        message: flagged
+          ? `FLAG: MBS charged ${net} core(s) on warranties that should net to zero.`
+          : "Warranty cores net to zero — no improper core charges.",
       });
     }
 
