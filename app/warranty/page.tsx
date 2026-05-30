@@ -19,13 +19,16 @@ type Pickup = {
 
 type Line = { model_code: string; raw_description: string; units: number };
 
-// Downscale + recompress an image file to keep the scan request small.
+const MODEL_CODES = [
+  "124R", "140R", "151R", "24F", "27", "34", "35", "47", "47AGM", "48", "48AGM",
+  "49", "49AGM", "51", "51R", "65", "78", "86", "94RAGM", "96R", "AUX14", "PRIUS", "TESLA",
+];
+
 async function fileToScaledBase64(
   file: File,
   maxDim = 1600,
   quality = 0.72
 ): Promise<{ base64: string; mediaType: string }> {
-  // PDFs and non-images: send as-is.
   if (!file.type.startsWith("image/")) {
     const raw: string = await new Promise((res, rej) => {
       const r = new FileReader();
@@ -130,13 +133,14 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ model_code: "", raw_description: "", units: 1 }]);
   const [fileObj, setFileObj] = useState<File | null>(null);
-  const [validCodes, setValidCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
   const totalUnits = lines.reduce((s, l) => s + (Number(l.units) || 0), 0);
+  const isValidCode = (c: string) => MODEL_CODES.includes(c);
+  const unmappedCount = lines.filter((l) => l.units > 0 && !isValidCode(l.model_code)).length;
 
   async function scanMemo() {
     setErr("");
@@ -155,7 +159,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       });
 
       const text = await res.text();
-      let data: { success?: boolean; error?: string; invoiceNumber?: string; validCodes?: string[]; lineItems?: { mbsCode?: string; mappedCode?: string; quantity?: number }[] };
+      let data: { success?: boolean; error?: string; invoiceNumber?: string; lineItems?: { mbsCode?: string; mappedCode?: string; quantity?: number }[] };
       try {
         data = JSON.parse(text);
       } catch {
@@ -168,15 +172,24 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       if (!res.ok || !data.success) throw new Error(data.error || "Scan failed");
 
       if (data.invoiceNumber && !memoNumber) setMemoNumber(data.invoiceNumber);
-      if (Array.isArray(data.validCodes)) setValidCodes(data.validCodes);
-      const scanned: Line[] = (data.lineItems || []).map((li) => ({
-        model_code: li.mappedCode || "",
-        raw_description: li.mbsCode || "",
-        units: Number(li.quantity) || 1,
-      }));
+      const scanned: Line[] = (data.lineItems || []).map((li) => {
+        const mapped = li.mappedCode || "";
+        return {
+          model_code: isValidCode(mapped) ? mapped : "",
+          raw_description: li.mbsCode || "",
+          units: Number(li.quantity) || 1,
+        };
+      });
       if (scanned.length) {
         setLines(scanned);
-        setMsg(`Read ${scanned.length} line(s) from the memo. Review and fix anything the reader got wrong, then Save. (Handwriting can be misread.)`);
+        const missing = scanned.filter((l) => !l.model_code).length;
+        setMsg(
+          `Read ${scanned.length} line(s). ${
+            missing > 0
+              ? `${missing} couldn't be matched to a model — pick the right code for the yellow rows (the handwritten text is shown to help).`
+              : "All matched — review against the paper, then Save."
+          }`
+        );
       } else {
         setErr("No warranty lines were read. Enter them by hand below.");
       }
@@ -202,6 +215,10 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
     setMsg("");
     if (!locationId || !memoNumber) {
       setErr("Location and memo number are required.");
+      return;
+    }
+    if (unmappedCount > 0) {
+      setErr(`${unmappedCount} line(s) still need a valid model code (yellow rows). Fix them before saving.`);
       return;
     }
     setBusy(true);
@@ -230,7 +247,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
           notes,
           fileUrl,
           fileName,
-          lines: lines.filter((l) => l.units > 0 && l.model_code.trim() !== ""),
+          lines: lines.filter((l) => l.units > 0 && isValidCode(l.model_code)),
         }),
       });
       const data = await res.json();
@@ -283,7 +300,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
             </button>
           </div>
           <p style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-            Handwritten memos can be misread — always review the lines below before saving.
+            Handwritten memos are often misread — yellow rows below need a model code picked. Always check every line against the paper before saving.
           </p>
         </div>
         <label style={{ gridColumn: "1 / -1" }}>Notes (optional)
@@ -293,7 +310,10 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>Warranties sent back ({totalUnits})</h3>
+        <h3 style={{ margin: 0 }}>
+          Warranties sent back ({totalUnits})
+          {unmappedCount > 0 && <span style={{ color: "#c00", fontSize: 14, fontWeight: 400 }}> — {unmappedCount} need a code</span>}
+        </h3>
         <button onClick={addLine} style={{ background: "#eee", border: "none", borderRadius: 4, padding: "6px 12px", cursor: "pointer" }}>+ Add line</button>
       </div>
 
@@ -301,43 +321,48 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
         <thead>
           <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
             <th style={{ padding: 8 }}>Model code</th>
-            <th style={{ padding: 8 }}>Description (optional)</th>
+            <th style={{ padding: 8 }}>Handwritten / description</th>
             <th style={{ padding: 8 }}>Qty</th>
             <th style={{ padding: 8 }}></th>
           </tr>
         </thead>
         <tbody>
-          {lines.map((l, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: 8 }}>
-                <input type="text" value={l.model_code} placeholder="e.g. 47AGM"
-                  onChange={(e) => updateLine(i, "model_code", e.target.value)}
-                  style={{ width: 120, padding: 6, fontFamily: "monospace" }} />
-              </td>
-              <td style={{ padding: 8 }}>
-                <input type="text" value={l.raw_description} placeholder="as written on memo"
-                  onChange={(e) => updateLine(i, "raw_description", e.target.value)}
-                  style={{ width: "100%", padding: 6 }} />
-              </td>
-              <td style={{ padding: 8 }}>
-                <input type="number" min={0} value={l.units}
-                  onChange={(e) => updateLine(i, "units", parseInt(e.target.value, 10) || 0)}
-                  style={{ width: 70, padding: 6 }} />
-              </td>
-              <td style={{ padding: 8 }}>
-                <button onClick={() => removeLine(i)}
-                  style={{ background: "none", border: "1px solid #ccc", borderRadius: 4, padding: "4px 8px", cursor: "pointer", color: "#c00" }}>
-                  Remove
-                </button>
-              </td>
-            </tr>
-          ))}
+          {lines.map((l, i) => {
+            const bad = l.units > 0 && !isValidCode(l.model_code);
+            return (
+              <tr key={i} style={{ borderBottom: "1px solid #eee", background: bad ? "#fffbe6" : "transparent" }}>
+                <td style={{ padding: 8 }}>
+                  <select value={l.model_code} onChange={(e) => updateLine(i, "model_code", e.target.value)}
+                    style={{ width: 130, padding: 6, borderColor: bad ? "#e0a800" : "#ccc" }}>
+                    <option value="">-- pick --</option>
+                    {MODEL_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </td>
+                <td style={{ padding: 8 }}>
+                  <input type="text" value={l.raw_description} placeholder="as written on memo"
+                    onChange={(e) => updateLine(i, "raw_description", e.target.value)}
+                    style={{ width: "100%", padding: 6, fontFamily: "monospace", color: "#555" }} />
+                </td>
+                <td style={{ padding: 8 }}>
+                  <input type="number" min={0} value={l.units}
+                    onChange={(e) => updateLine(i, "units", parseInt(e.target.value, 10) || 0)}
+                    style={{ width: 70, padding: 6 }} />
+                </td>
+                <td style={{ padding: 8 }}>
+                  <button onClick={() => removeLine(i)}
+                    style={{ background: "none", border: "1px solid #ccc", borderRadius: 4, padding: "4px 8px", cursor: "pointer", color: "#c00" }}>
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
-      <button onClick={submit} disabled={busy || totalUnits === 0}
-        style={{ padding: "12px 24px", background: "#0066cc", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>
-        {busy ? "Saving..." : `Save Warranty Pickup (${totalUnits})`}
+      <button onClick={submit} disabled={busy || totalUnits === 0 || unmappedCount > 0}
+        style={{ padding: "12px 24px", background: unmappedCount > 0 ? "#999" : "#0066cc", color: "white", border: "none", borderRadius: 4, cursor: unmappedCount > 0 ? "not-allowed" : "pointer" }}>
+        {busy ? "Saving..." : unmappedCount > 0 ? `Fix ${unmappedCount} yellow row(s) to save` : `Save Warranty Pickup (${totalUnits})`}
       </button>
     </div>
   );
