@@ -27,7 +27,8 @@ export default function ReceiveDeliveryPage() {
   const [receiptNumber, setReceiptNumber] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [locationId, setLocationId] = useState("");
-  const [coreCount, setCoreCount] = useState("");
+  const [coreCharged, setCoreCharged] = useState("");
+  const [coreCredited, setCoreCredited] = useState("");
   const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split("T")[0]);
   const [supplier, setSupplier] = useState("Continental Battery Systems");
 
@@ -87,13 +88,13 @@ export default function ReceiveDeliveryPage() {
       setPoNumber(data.poNumber || "");
       if (data.invoiceDate) setReceiptDate(data.invoiceDate);
       setScanLines(data.lineItems || []);
-      // Pre-fill bulk cores from the scanned core lines if present.
+      // Pre-fill cores charged from the scanned core lines if present.
       if (Array.isArray(data.coreLines) && data.coreLines.length) {
         const coreTotal = data.coreLines.reduce(
           (s: number, c: { quantity: number }) => s + (Number(c.quantity) || 0),
           0
         );
-        if (coreTotal > 0) setCoreCount(String(coreTotal));
+        if (coreTotal > 0) setCoreCharged(String(coreTotal));
       }
       if (Array.isArray(data.validCodes) && data.validCodes.length) setValidCodes(data.validCodes);
       setStep("review");
@@ -122,6 +123,7 @@ export default function ReceiveDeliveryPage() {
   }
 
   const totalBatteries = scanLines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0);
+  const coreNet = (parseInt(coreCharged, 10) || 0) - (parseInt(coreCredited, 10) || 0);
 
   async function commit() {
     setError("");
@@ -168,7 +170,8 @@ export default function ReceiveDeliveryPage() {
           receiptNumber,
           poNumber,
           receiptDate,
-          coreCharges: parseInt(coreCount, 10) || 0,
+          coreCharges: parseInt(coreCharged, 10) || 0,
+          coreCredits: parseInt(coreCredited, 10) || 0,
           fileUrl,
           fileName: uploadedName,
           totalUnits: totalBatteries,
@@ -202,9 +205,9 @@ export default function ReceiveDeliveryPage() {
       }
 
       setDoneSummary(
-        `Delivery receipt ${receiptNumber}: ${logged} batteries added to inventory (no cost yet). ${
-          parseInt(coreCount, 10) || 0
-        } cores recorded. Cost will be filled in when the MBS invoice is received.`
+        `Delivery receipt ${receiptNumber}: ${logged} batteries added to inventory (no cost yet). Cores — charged ${
+          parseInt(coreCharged, 10) || 0
+        }, credited ${parseInt(coreCredited, 10) || 0}, net owed ${coreNet}. Cost is filled in when the MBS invoice is received.`
       );
       setStep("done");
     } catch (e) {
@@ -272,10 +275,19 @@ export default function ReceiveDeliveryPage() {
                 style={{ display: "block", width: "100%", padding: "8px", marginTop: "4px" }} />
             </label>
             <label>
-              Total Cores (bulk)
-              <input type="number" min={0} value={coreCount} onChange={(e) => setCoreCount(e.target.value)}
+              Cores Charged
+              <input type="number" min={0} value={coreCharged} onChange={(e) => setCoreCharged(e.target.value)}
                 style={{ display: "block", width: "100%", padding: "8px", marginTop: "4px" }} />
             </label>
+            <label>
+              Exchange / Junk Credits
+              <input type="number" min={0} value={coreCredited} onChange={(e) => setCoreCredited(e.target.value)}
+                style={{ display: "block", width: "100%", padding: "8px", marginTop: "4px" }} />
+            </label>
+            <div style={{ gridColumn: "1 / -1", background: coreNet > 0 ? "#fff4f4" : "#f0fff4", border: "1px solid " + (coreNet > 0 ? "#f3c0c0" : "#bfe6c9"), borderRadius: 6, padding: "10px 12px" }}>
+              <strong>Net cores owed: {coreNet}</strong>
+              <span style={{ color: "#666", fontSize: 13 }}> (charged {parseInt(coreCharged, 10) || 0} − credited {parseInt(coreCredited, 10) || 0}). This is what reconciles against the MBS invoice.</span>
+            </div>
             <label style={{ gridColumn: "1 / -1" }}>
               Location (where these batteries land)
               <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
@@ -296,7 +308,7 @@ export default function ReceiveDeliveryPage() {
             </button>
           </div>
           <p style={{ fontSize: "13px", color: "#666", marginTop: "0" }}>
-            Review each line. Yellow rows need attention (the reader wasn't confident — check the AGM/standard mapping).
+            Review each line. Yellow rows need attention (the reader wasn&apos;t confident — check the AGM/standard mapping).
           </p>
 
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
