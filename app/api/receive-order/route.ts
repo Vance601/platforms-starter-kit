@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── NEW: Delivery receipt (day 0) — adds inventory with NO cost ──
+    // ── Delivery receipt (day 0) — adds inventory with NO cost ──
 
     if (action === "createDeliveryReceipt") {
       const {
@@ -172,6 +172,7 @@ export async function POST(req: NextRequest) {
         poNumber,
         receiptDate,
         coreCharges,
+        coreCredits,
         fileUrl,
         fileName,
         notes,
@@ -193,24 +194,30 @@ export async function POST(req: NextRequest) {
       }
       const companyId = locations[0].company_id;
 
+      const charged = Number(coreCharges) || 0;
+      const credited = Number(coreCredits) || 0;
+      const net = charged - credited;
+
       const receiptId = crypto.randomUUID();
       const parsedDate = receiptDate ? new Date(receiptDate) : new Date();
 
       await sql`
         INSERT INTO delivery_receipts
           (id, company_id, location_id, supplier, receipt_number, po_number,
-           receipt_date, total_units, core_charges, file_url, file_name, notes, uploaded_by_id)
+           receipt_date, total_units, core_charges, core_credits, core_net,
+           file_url, file_name, notes, uploaded_by_id)
         VALUES
           (${receiptId}, ${companyId}, ${locationId}, ${supplier ?? null},
            ${receiptNumber}, ${poNumber ?? null}, ${parsedDate.toISOString()},
-           ${totalUnits ?? null}, ${coreCharges ?? null}, ${fileUrl ?? null},
-           ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+           ${totalUnits ?? null}, ${charged}, ${credited}, ${net},
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
       `;
 
       return NextResponse.json({
         success: true,
         deliveryReceiptId: receiptId,
         receiptNumber,
+        coreNet: net,
       });
     }
 
@@ -251,7 +258,6 @@ export async function POST(req: NextRequest) {
       const barcode = await generateNextBarcode(receipt.company_slug, batteryModelCode);
       const batteryId = crypto.randomUUID();
 
-      // cost and mbs_invoice_id are NULL — backfilled later when the MBS invoice arrives.
       await sql`
         INSERT INTO batteries
           (id, barcode, battery_type_id, battery_model_id, company_id, location_id,
@@ -272,7 +278,6 @@ export async function POST(req: NextRequest) {
            ${`Received on delivery receipt ${deliveryReceiptId}`});
       `;
 
-      // Record the line item for reconciliation.
       await sql`
         INSERT INTO delivery_receipt_lines
           (delivery_receipt_id, raw_description, model_code, units)
