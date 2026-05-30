@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 type SaleRow = {
   driver_id: string;
@@ -176,6 +177,13 @@ export default function DriverSalesPage() {
     marginBottom: 16,
     background: "#fff",
   };
+  const backLink: React.CSSProperties = {
+    display: "inline-block",
+    marginBottom: 16,
+    fontSize: 14,
+    color: "#2563eb",
+    textDecoration: "none",
+  };
   const label: React.CSSProperties = { fontSize: 13, color: "#475569", display: "block", marginBottom: 4 };
   const input: React.CSSProperties = {
     padding: "8px 10px",
@@ -218,6 +226,7 @@ export default function DriverSalesPage() {
   if (!authed) {
     return (
       <div style={page}>
+        <Link href="/" style={backLink}>← Back to Dashboard</Link>
         <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Driver Sales Report</h1>
         <p style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
           Owner access only. Enter the admin password to view.
@@ -253,6 +262,7 @@ export default function DriverSalesPage() {
   // --- Report ---
   return (
     <div style={page}>
+      <Link href="/" style={backLink}>← Back to Dashboard</Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>Driver Sales Report</h1>
         <button style={btnOutline} onClick={exportCSV} disabled={rows.length === 0}>
