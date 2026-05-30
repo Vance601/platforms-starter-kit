@@ -19,6 +19,59 @@ type Pickup = {
 
 type Line = { model_code: string; raw_description: string; units: number };
 
+// Downscale + recompress an image file to keep the scan request small.
+async function fileToScaledBase64(
+  file: File,
+  maxDim = 1600,
+  quality = 0.72
+): Promise<{ base64: string; mediaType: string }> {
+  // PDFs and non-images: send as-is.
+  if (!file.type.startsWith("image/")) {
+    const raw: string = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res((r.result as string).split(",")[1] || "");
+      r.onerror = () => rej(new Error("read failed"));
+      r.readAsDataURL(file);
+    });
+    return { base64: raw, mediaType: file.type };
+  }
+
+  const dataUrl: string = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = () => rej(new Error("read failed"));
+    r.readAsDataURL(file);
+  });
+
+  const img: HTMLImageElement = await new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("image decode failed"));
+    im.src = dataUrl;
+  });
+
+  let { width, height } = img;
+  if (width > maxDim || height > maxDim) {
+    if (width >= height) {
+      height = Math.round((height * maxDim) / width);
+      width = maxDim;
+    } else {
+      width = Math.round((width * maxDim) / height);
+      height = maxDim;
+    }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { base64: dataUrl.split(",")[1] || "", mediaType: file.type };
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const out = canvas.toDataURL("image/jpeg", quality);
+  return { base64: out.split(",")[1] || "", mediaType: "image/jpeg" };
+}
+
 export default function WarrantyPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -77,8 +130,6 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ model_code: "", raw_description: "", units: 1 }]);
   const [fileObj, setFileObj] = useState<File | null>(null);
-  const [fileBase64, setFileBase64] = useState("");
-  const [mediaType, setMediaType] = useState("");
   const [validCodes, setValidCodes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -87,44 +138,42 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
 
   const totalUnits = lines.reduce((s, l) => s + (Number(l.units) || 0), 0);
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileObj(file);
-    setMediaType(file.type);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setFileBase64(result.split(",")[1] || "");
-    };
-    reader.readAsDataURL(file);
-  }
-
   async function scanMemo() {
     setErr("");
     setMsg("");
-    if (!fileBase64 || !mediaType) {
+    if (!fileObj) {
       setErr("Choose a memo photo first.");
       return;
     }
     setScanning(true);
     try {
+      const { base64, mediaType } = await fileToScaledBase64(fileObj);
       const res = await fetch("/api/receive-order/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileBase64, mediaType }),
+        body: JSON.stringify({ fileBase64: base64, mediaType }),
       });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Scan failed");
+
+      const text = await res.text();
+      let data: { success?: boolean; error?: string; invoiceNumber?: string; validCodes?: string[]; lineItems?: { mbsCode?: string; mappedCode?: string; quantity?: number }[] };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          res.status === 413
+            ? "Photo too large even after shrinking. Try a tighter crop or a clearer, smaller photo."
+            : `Scan service error (${res.status}). Enter the lines by hand.`
+        );
+      }
+      if (!res.ok || !data.success) throw new Error(data.error || "Scan failed");
+
       if (data.invoiceNumber && !memoNumber) setMemoNumber(data.invoiceNumber);
       if (Array.isArray(data.validCodes)) setValidCodes(data.validCodes);
-      const scanned: Line[] = (data.lineItems || []).map(
-        (li: { mbsCode?: string; mappedCode?: string; quantity?: number }) => ({
-          model_code: li.mappedCode || "",
-          raw_description: li.mbsCode || "",
-          units: Number(li.quantity) || 1,
-        })
-      );
+      const scanned: Line[] = (data.lineItems || []).map((li) => ({
+        model_code: li.mappedCode || "",
+        raw_description: li.mbsCode || "",
+        units: Number(li.quantity) || 1,
+      }));
       if (scanned.length) {
         setLines(scanned);
         setMsg(`Read ${scanned.length} line(s) from the memo. Review and fix anything the reader got wrong, then Save. (Handwriting can be misread.)`);
@@ -163,7 +212,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
         const fd = new FormData();
         fd.append("file", fileObj);
         const up = await fetch("/api/receive-delivery/upload", { method: "POST", body: fd });
-        const upData = await up.json();
+        const upData = await up.json().catch(() => ({}));
         if (upData?.success) {
           fileUrl = upData.url;
           fileName = upData.fileName;
@@ -191,7 +240,6 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       setNotes("");
       setLines([{ model_code: "", raw_description: "", units: 1 }]);
       setFileObj(null);
-      setFileBase64("");
       onDone();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Unknown error");
@@ -228,8 +276,8 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
         <div style={{ gridColumn: "1 / -1" }}>
           <label>Pickup memo photo (scan to auto-fill lines)</label>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 4 }}>
-            <input type="file" accept="application/pdf,image/*" onChange={onFileChange} />
-            <button onClick={scanMemo} disabled={scanning || !fileBase64}
+            <input type="file" accept="application/pdf,image/*" onChange={(e) => setFileObj(e.target.files?.[0] || null)} />
+            <button onClick={scanMemo} disabled={scanning || !fileObj}
               style={{ padding: "8px 16px", background: "#0066cc", color: "white", border: "none", borderRadius: 4, cursor: "pointer", whiteSpace: "nowrap" }}>
               {scanning ? "Reading..." : "Read Memo"}
             </button>
@@ -329,7 +377,7 @@ function MemoForm({ locations, pickups }: { locations: Location[]; pickups: Pick
         const fd = new FormData();
         fd.append("file", fileObj);
         const up = await fetch("/api/receive-delivery/upload", { method: "POST", body: fd });
-        const upData = await up.json();
+        const upData = await up.json().catch(() => ({}));
         if (upData?.success) {
           fileUrl = upData.url;
           fileName = upData.fileName;
