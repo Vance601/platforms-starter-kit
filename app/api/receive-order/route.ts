@@ -194,6 +194,23 @@ export async function POST(req: NextRequest) {
       }
       const companyId = locations[0].company_id;
 
+      // Duplicate guard: reject if this receipt number already exists for this company.
+      const { rows: existing } = await sql`
+        SELECT id FROM delivery_receipts
+        WHERE receipt_number = ${receiptNumber} AND company_id = ${companyId}
+        LIMIT 1;
+      `;
+      if (existing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Delivery receipt ${receiptNumber} already exists for this company. It was not added again.`,
+            duplicate: true,
+            existingId: existing[0].id,
+          },
+          { status: 409 }
+        );
+      }
+
       const charged = Number(coreCharges) || 0;
       const credited = Number(coreCredits) || 0;
       const net = charged - credited;
