@@ -162,6 +162,137 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ── NEW: Delivery receipt (day 0) — adds inventory with NO cost ──
+
+    if (action === "createDeliveryReceipt") {
+      const {
+        locationId,
+        supplier,
+        receiptNumber,
+        poNumber,
+        receiptDate,
+        coreCharges,
+        fileUrl,
+        fileName,
+        notes,
+        totalUnits,
+      } = body;
+
+      if (!locationId || !receiptNumber) {
+        return NextResponse.json(
+          { error: "Missing required fields: locationId, receiptNumber" },
+          { status: 400 }
+        );
+      }
+
+      const { rows: locations } = await sql`
+        SELECT company_id FROM locations WHERE id = ${locationId};
+      `;
+      if (locations.length === 0) {
+        return NextResponse.json({ error: "Location not found" }, { status: 404 });
+      }
+      const companyId = locations[0].company_id;
+
+      const receiptId = crypto.randomUUID();
+      const parsedDate = receiptDate ? new Date(receiptDate) : new Date();
+
+      await sql`
+        INSERT INTO delivery_receipts
+          (id, company_id, location_id, supplier, receipt_number, po_number,
+           receipt_date, total_units, core_charges, file_url, file_name, notes, uploaded_by_id)
+        VALUES
+          (${receiptId}, ${companyId}, ${locationId}, ${supplier ?? null},
+           ${receiptNumber}, ${poNumber ?? null}, ${parsedDate.toISOString()},
+           ${totalUnits ?? null}, ${coreCharges ?? null}, ${fileUrl ?? null},
+           ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+      `;
+
+      return NextResponse.json({
+        success: true,
+        deliveryReceiptId: receiptId,
+        receiptNumber,
+      });
+    }
+
+    if (action === "addBatteryFromDelivery") {
+      const { deliveryReceiptId, batteryModelCode, rawDescription } = body;
+
+      if (!deliveryReceiptId || !batteryModelCode) {
+        return NextResponse.json(
+          { error: "Missing required fields: deliveryReceiptId, batteryModelCode" },
+          { status: 400 }
+        );
+      }
+
+      const { rows: receipts } = await sql`
+        SELECT delivery_receipts.id, delivery_receipts.company_id, delivery_receipts.location_id,
+               companies.slug AS company_slug
+        FROM delivery_receipts
+        JOIN companies ON companies.id = delivery_receipts.company_id
+        WHERE delivery_receipts.id = ${deliveryReceiptId};
+      `;
+      if (receipts.length === 0) {
+        return NextResponse.json({ error: "Delivery receipt not found" }, { status: 404 });
+      }
+      const receipt = receipts[0];
+
+      const { rows: models } = await sql`
+        SELECT battery_models.id AS model_id,
+               battery_types.id AS type_id
+        FROM battery_models
+        JOIN battery_types ON battery_types.id = battery_models.battery_type_id
+        WHERE battery_models.code = ${batteryModelCode};
+      `;
+      if (models.length === 0) {
+        return NextResponse.json({ error: "Battery model not found" }, { status: 404 });
+      }
+      const model = models[0];
+
+      const barcode = await generateNextBarcode(receipt.company_slug, batteryModelCode);
+      const batteryId = crypto.randomUUID();
+
+      // cost and mbs_invoice_id are NULL — backfilled later when the MBS invoice arrives.
+      await sql`
+        INSERT INTO batteries
+          (id, barcode, battery_type_id, battery_model_id, company_id, location_id,
+           status, cost, mbs_invoice_id, delivery_receipt_id, received_at, created_at)
+        VALUES
+          (${batteryId}, ${barcode}, ${model.type_id}, ${model.model_id},
+           ${receipt.company_id}, ${receipt.location_id}, 'in_warehouse',
+           NULL, NULL, ${deliveryReceiptId}, NOW(), NOW());
+      `;
+
+      await sql`
+        INSERT INTO battery_movements
+          (id, battery_id, from_status, to_status, to_location_id,
+           occurred_at, recorded_by_id, notes)
+        VALUES
+          (${crypto.randomUUID()}, ${batteryId}, NULL, 'in_warehouse',
+           ${receipt.location_id}, NOW(), ${session.user.id},
+           ${`Received on delivery receipt ${deliveryReceiptId}`});
+      `;
+
+      // Record the line item for reconciliation.
+      await sql`
+        INSERT INTO delivery_receipt_lines
+          (delivery_receipt_id, raw_description, model_code, units)
+        VALUES
+          (${deliveryReceiptId}, ${rawDescription ?? null}, ${batteryModelCode}, 1);
+      `;
+
+      const { rows: countRows } = await sql`
+        SELECT COUNT(*)::int AS count FROM batteries WHERE delivery_receipt_id = ${deliveryReceiptId};
+      `;
+      const loggedCount = countRows[0].count;
+
+      return NextResponse.json({
+        success: true,
+        barcode,
+        batteryId,
+        loggedCount,
+      });
+    }
+
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (err: unknown) {
     return NextResponse.json(
