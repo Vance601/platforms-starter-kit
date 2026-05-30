@@ -23,7 +23,6 @@ export default function ReceiveDeliveryPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [step, setStep] = useState<"upload" | "review" | "committing" | "done">("upload");
 
-  // Header fields
   const [receiptNumber, setReceiptNumber] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [locationId, setLocationId] = useState("");
@@ -88,14 +87,7 @@ export default function ReceiveDeliveryPage() {
       setPoNumber(data.poNumber || "");
       if (data.invoiceDate) setReceiptDate(data.invoiceDate);
       setScanLines(data.lineItems || []);
-      // Pre-fill cores charged from the scanned core lines if present.
-      if (Array.isArray(data.coreLines) && data.coreLines.length) {
-        const coreTotal = data.coreLines.reduce(
-          (s: number, c: { quantity: number }) => s + (Number(c.quantity) || 0),
-          0
-        );
-        if (coreTotal > 0) setCoreCharged(String(coreTotal));
-      }
+      // Cores are NOT auto-filled — enter Charged and Credited by hand from the receipt.
       if (Array.isArray(data.validCodes) && data.validCodes.length) setValidCodes(data.validCodes);
       setStep("review");
     } catch (e) {
@@ -143,7 +135,6 @@ export default function ReceiveDeliveryPage() {
 
     setStep("committing");
     try {
-      // 1) Upload the file to Blob (if one was chosen).
       let fileUrl: string | null = null;
       let uploadedName: string | null = null;
       if (fileObj) {
@@ -158,7 +149,6 @@ export default function ReceiveDeliveryPage() {
         }
       }
 
-      // 2) Create the delivery receipt header.
       setCommitProgress("Creating delivery receipt...");
       const createRes = await fetch("/api/receive-order", {
         method: "POST",
@@ -182,7 +172,6 @@ export default function ReceiveDeliveryPage() {
         throw new Error(createData.error || "Failed to create delivery receipt");
       const deliveryReceiptId = createData.deliveryReceiptId;
 
-      // 3) Add each battery (cost-free), quantity times.
       let logged = 0;
       for (const line of scanLines) {
         for (let i = 0; i < line.quantity; i++) {
@@ -276,17 +265,17 @@ export default function ReceiveDeliveryPage() {
             </label>
             <label>
               Cores Charged
-              <input type="number" min={0} value={coreCharged} onChange={(e) => setCoreCharged(e.target.value)}
+              <input type="number" min={0} placeholder="from receipt" value={coreCharged} onChange={(e) => setCoreCharged(e.target.value)}
                 style={{ display: "block", width: "100%", padding: "8px", marginTop: "4px" }} />
             </label>
             <label>
               Exchange / Junk Credits
-              <input type="number" min={0} value={coreCredited} onChange={(e) => setCoreCredited(e.target.value)}
+              <input type="number" min={0} placeholder="from receipt" value={coreCredited} onChange={(e) => setCoreCredited(e.target.value)}
                 style={{ display: "block", width: "100%", padding: "8px", marginTop: "4px" }} />
             </label>
             <div style={{ gridColumn: "1 / -1", background: coreNet > 0 ? "#fff4f4" : "#f0fff4", border: "1px solid " + (coreNet > 0 ? "#f3c0c0" : "#bfe6c9"), borderRadius: 6, padding: "10px 12px" }}>
               <strong>Net cores owed: {coreNet}</strong>
-              <span style={{ color: "#666", fontSize: 13 }}> (charged {parseInt(coreCharged, 10) || 0} − credited {parseInt(coreCredited, 10) || 0}). This is what reconciles against the MBS invoice.</span>
+              <span style={{ color: "#666", fontSize: 13 }}> (charged {parseInt(coreCharged, 10) || 0} − credited {parseInt(coreCredited, 10) || 0}). Enter both numbers from the receipt. This net reconciles against the MBS invoice.</span>
             </div>
             <label style={{ gridColumn: "1 / -1" }}>
               Location (where these batteries land)
