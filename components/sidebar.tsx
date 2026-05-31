@@ -18,6 +18,7 @@ import {
   FileText,
   MapPin,
   ClipboardCheck,
+  Scale,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -144,6 +145,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/warranty">
               <ClipboardCheck className="mr-2 h-4 w-4" />
               Warranty Reconcile
+            </Link>
+          </Button>
+          <Button variant={pathname === "/core-accountability" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/core-accountability">
+              <Scale className="mr-2 h-4 w-4" />
+              Core Accountability
             </Link>
           </Button>
           <Button variant={pathname === "/driver-sales" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
