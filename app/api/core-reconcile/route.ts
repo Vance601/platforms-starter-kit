@@ -1,11 +1,7 @@
 // app/api/core-reconcile/route.ts
 // READ-ONLY per-driver core reconciliation.
-// Owner-only: ?pw= checked against MIGRATE_SECRET (same gate as warranty-report).
-//
-// Your rule: a driver owes the warehouse one core for every battery he sold
-// (regular sale OR warranty). Attribution is on the SALE movement
-// (battery_movements.to_status='sold', to_driver_id). Cores turned in are the
-// matching core_returns rows that have been flipped to 'returned'.
+// Owner-only: ?pw= checked against MIGRATE_SECRET.
+// Driver attribution = battery_movements.driver_id (drivers table).
 
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
@@ -28,12 +24,12 @@ export async function GET(req: NextRequest) {
       WITH sale_moves AS (
         SELECT
           bm.battery_id,
-          bm.to_driver_id AS driver_id,
+          bm.driver_id AS driver_id,
           b.is_warranty
         FROM battery_movements bm
         LEFT JOIN batteries b ON b.id = bm.battery_id
         WHERE bm.to_status = 'sold'
-          AND bm.to_driver_id IS NOT NULL
+          AND bm.driver_id IS NOT NULL
       ),
       core_status AS (
         SELECT
