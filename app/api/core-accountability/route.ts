@@ -1,12 +1,5 @@
 // app/api/core-accountability/route.ts
-// READ-ONLY. No writes. Returns:
-//   - outstanding: owed cores grouped by driver + model
-//   - summary: counts per status (owed / returned / customer_kept)
-//
-// Driver attribution = battery_movements.to_driver_id WHERE to_status='sold'
-//   (confirmed from schema; NOT batteries.current_driver_id, which is nulled on sale).
-// Ordering / chronology uses battery_movements.occurred_at.
-// core_returns has NO created_at; owed rows have null returned_at.
+// READ-ONLY. Driver attribution = battery_movements.driver_id (drivers table).
 
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
@@ -15,7 +8,6 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Outstanding (not turned in) by driver + model.
     const { rows: outstanding } = await sql`
       SELECT
         COALESCE(d.name, 'Unknown driver') AS driver_name,
@@ -26,13 +18,12 @@ export async function GET() {
       LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
       LEFT JOIN battery_movements bm
         ON bm.battery_id = cr.battery_id AND bm.to_status = 'sold'
-      LEFT JOIN drivers d          ON d.id = bm.to_driver_id
+      LEFT JOIN drivers d          ON d.id = bm.driver_id
       WHERE cr.status = 'owed'
       GROUP BY d.name, mdl.code
       ORDER BY cores_owed DESC, driver_name ASC;
     `;
 
-    // Summary counts per status.
     const { rows: summaryRows } = await sql`
       SELECT status, COUNT(*)::int AS n
       FROM core_returns
