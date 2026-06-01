@@ -87,6 +87,15 @@ export async function POST(req: NextRequest) {
       WHERE driver_id = ${driverId} AND ended_at IS NULL;
     `;
 
+    // FIX: release any OTHER truck this driver still holds. Without this, the
+    // driver's previous truck keeps current_driver_id = this driver, so the
+    // driver shows up as the current holder of two trucks at once.
+    await sql`
+      UPDATE trucks
+      SET current_driver_id = NULL, updated_at = NOW()
+      WHERE current_driver_id = ${driverId} AND id <> ${truckId};
+    `;
+
     // Assign the truck to the claiming driver.
     await sql`
       UPDATE trucks
