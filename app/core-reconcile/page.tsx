@@ -8,16 +8,16 @@ type DriverRow = {
   regular_sales: number;
   warranties: number;
   sold_total: number;
-  cores_owed: number;
   cores_returned: number;
+  still_owes: number;
 };
 
 type Totals = {
   regular_sales: number;
   warranties: number;
   sold_total: number;
-  cores_owed: number;
   cores_returned: number;
+  still_owes: number;
 };
 
 type ApiResponse = {
@@ -59,7 +59,6 @@ export default function CoreReconcilePage() {
     }
   }
 
-  // ---- Password gate ----
   if (!loaded) {
     return (
       <div className="max-w-md space-y-4 py-6">
@@ -104,9 +103,9 @@ export default function CoreReconcilePage() {
         </button>
       </div>
       <p className="mt-1 text-sm text-gray-500">
-        Every battery a driver sells — regular or warranty — owes one core back to the
-        warehouse. The <span className="font-medium">Still Owes</span> column is the live
-        gap: cores he hasn&apos;t turned in yet.
+        Each regular sale owes one core back to the warehouse. Warranties are shown for
+        visibility but their cores are tracked in the warranty-return system.{" "}
+        <span className="font-medium">Still Owes</span> = regular sales minus cores turned in.
       </p>
 
       {error ? (
@@ -115,18 +114,16 @@ export default function CoreReconcilePage() {
         </div>
       ) : null}
 
-      {/* Totals */}
       {totals && (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Card label="Regular sales" value={totals.regular_sales} accent="text-gray-900" />
           <Card label="Warranties" value={totals.warranties} accent="text-gray-900" />
           <Card label="Total sold" value={totals.sold_total} accent="text-gray-900" />
           <Card label="Cores turned in" value={totals.cores_returned} accent="text-green-600" />
-          <Card label="Still owed" value={totals.cores_owed} accent="text-red-600" />
+          <Card label="Still owed" value={totals.still_owes} accent="text-red-600" />
         </div>
       )}
 
-      {/* Per-driver table */}
       <div className="mt-8 overflow-x-auto rounded-md border border-gray-200">
         <table className="w-full text-left text-sm">
           <thead className="bg-gray-50 text-gray-600">
@@ -143,12 +140,12 @@ export default function CoreReconcilePage() {
             {drivers.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-500">
-                  No driver-attributed sales yet. Once drivers record sales, they appear here.
+                  No driver-attributed sales yet.
                 </td>
               </tr>
             ) : (
               drivers.map((d) => (
-                <tr key={d.driver_id} className={d.cores_owed > 0 ? "bg-red-50/40" : ""}>
+                <tr key={d.driver_id} className={d.still_owes > 0 ? "bg-red-50/40" : ""}>
                   <td className="px-4 py-2 font-medium text-gray-900">{d.driver_name}</td>
                   <td className="px-4 py-2 text-right text-gray-700">{d.regular_sales}</td>
                   <td className="px-4 py-2 text-right text-gray-700">{d.warranties}</td>
@@ -157,10 +154,10 @@ export default function CoreReconcilePage() {
                   <td
                     className={
                       "px-4 py-2 text-right font-bold " +
-                      (d.cores_owed > 0 ? "text-red-600" : "text-gray-400")
+                      (d.still_owes > 0 ? "text-red-600" : "text-gray-400")
                     }
                   >
-                    {d.cores_owed}
+                    {d.still_owes}
                   </td>
                 </tr>
               ))
@@ -168,11 +165,6 @@ export default function CoreReconcilePage() {
           </tbody>
         </table>
       </div>
-
-      <p className="mt-4 text-xs text-gray-400">
-        Note: only sales recorded after the driver-capture fix carry attribution. Earlier
-        unattributed sales won&apos;t appear against a driver.
-      </p>
     </div>
   );
 }
