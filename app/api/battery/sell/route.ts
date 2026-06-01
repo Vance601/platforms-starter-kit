@@ -92,7 +92,6 @@ export async function POST(req: NextRequest) {
     const truck = truckRows[0];
 
     // The battery must exist, be on_truck, on THIS driver's truck, same company.
-    // NOTE: location_id added to the SELECT so we can stamp the core record.
     const { rows: batteryRows } = await sql`
       SELECT id, barcode, status, company_id, location_id, truck_id
       FROM batteries
@@ -151,8 +150,6 @@ export async function POST(req: NextRequest) {
 
     // --- Perform the sale ---
     // 1) Mark the battery sold. Clear truck columns.
-    //    NOTE: sold_by_id is intentionally NOT set here — that column FK-references
-    //    the users table, not drivers. Driver attribution lives on the movement below.
     if (isWarranty) {
       await sql`
         UPDATE batteries
@@ -178,9 +175,10 @@ export async function POST(req: NextRequest) {
       `;
     }
 
-    // 2) Log the movement (on_truck -> sold). FK-safe columns only.
-    //    FIX: write the driver into to_driver_id (the column all reports read).
-    //    Also keep legacy driver_id populated for backward compatibility.
+    // 2) Log the movement (on_truck -> sold).
+    //    driver_id references the drivers table (confirmed via FK). This is the
+    //    column all reports read for driver attribution. Do NOT use to_driver_id
+    //    here — that column FK-references users, not drivers.
     const movementId = crypto.randomUUID();
     const movementNote = isWarranty
       ? `WARRANTY sale on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})` +
@@ -188,15 +186,13 @@ export async function POST(req: NextRequest) {
       : `Sold on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})`;
     await sql`
       INSERT INTO battery_movements
-        (id, battery_id, from_status, to_status, from_truck_id, to_driver_id, driver_id, call_reference, notes)
+        (id, battery_id, from_status, to_status, from_truck_id, driver_id, call_reference, notes)
       VALUES
         (${movementId}, ${battery.id}, 'on_truck', 'sold',
-         ${truck.id}, ${driverId}, ${driverId}, ${callNumber}, ${movementNote});
+         ${truck.id}, ${driverId}, ${callNumber}, ${movementNote});
     `;
 
-    // 3) Create the OWED core record. Both regular AND warranty sales owe a core
-    //    (the old/failed battery should come back to MBS). Linked by battery_id;
-    //    sale_id left NULL because sales aren't recorded as separate rows yet.
+    // 3) Create the OWED core record. Both regular AND warranty sales owe a core.
     const coreId = crypto.randomUUID();
     await sql`
       INSERT INTO core_returns
