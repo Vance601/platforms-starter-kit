@@ -151,13 +151,14 @@ export async function POST(req: NextRequest) {
 
     // --- Perform the sale ---
     // 1) Mark the battery sold. Clear truck columns.
+    //    NOTE: sold_by_id is intentionally NOT set here — that column FK-references
+    //    the users table, not drivers. Driver attribution lives on the movement below.
     if (isWarranty) {
       await sql`
         UPDATE batteries
         SET status = 'sold',
             sold_at = NOW(),
             sold_on_call_number = ${callNumber},
-            sold_by_id = ${driverId},
             is_warranty = true,
             warranty_replaces_battery_id = ${validatedReplacesId},
             warranty_note = ${warrantyNote},
@@ -171,7 +172,6 @@ export async function POST(req: NextRequest) {
         SET status = 'sold',
             sold_at = NOW(),
             sold_on_call_number = ${callNumber},
-            sold_by_id = ${driverId},
             truck_id = NULL,
             current_truck_id = NULL
         WHERE id = ${battery.id};
