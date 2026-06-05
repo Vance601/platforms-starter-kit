@@ -54,6 +54,7 @@
     "immer": "latest",
     "input-otp": "1.4.1",
     "lodash": "latest",
+    "qrcode.react": "4.2.0",
     "lucide-react": "^0.454.0",
     "next": "15.2.8",
     "next-auth": "5.0.0-beta.25",
