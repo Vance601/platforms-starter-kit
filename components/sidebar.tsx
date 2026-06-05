@@ -19,6 +19,7 @@ import {
   MapPin,
   ClipboardCheck,
   Scale,
+  ClipboardList,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -151,6 +152,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/core-accountability">
               <Scale className="mr-2 h-4 w-4" />
               Core Accountability
+            </Link>
+          </Button>
+          <Button variant={pathname === "/core-reconcile" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/core-reconcile">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Driver Reconcile
             </Link>
           </Button>
           <Button variant={pathname === "/driver-sales" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
