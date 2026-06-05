@@ -1,0 +1,14 @@
+{
+  "redirects": [
+    {
+      "source": "/driver",
+      "destination": "/driver/login",
+      "permanent": false
+    },
+    {
+      "source": "/admin",
+      "destination": "/",
+      "permanent": false
+    }
+  ]
+}
