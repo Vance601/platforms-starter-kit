@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = ["/login", "/api/auth", "/api/migrate", "/api/seed", "/api/make-owner"];
+const PUBLIC_ROUTES = ["/login", "/api/auth", "/api/migrate", "/api/seed", "/api/make-owner", "/manager", "/api/auth-manager", "/driver", "/api/auth-driver"];
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
