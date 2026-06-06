@@ -1,7 +1,5 @@
 // app/api/auth-manager/route.ts
 // Manager login (email + password). Mirrors the driver PIN auth pattern.
-// POST { email, password } -> verifies, sets manager_session cookie
-// DELETE                   -> logout (clears cookie)
 
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
@@ -10,8 +8,6 @@ import { scryptSync, timingSafeEqual } from "crypto";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Verify a plaintext password against the stored "salt:hash" string.
-// Same scrypt scheme as the driver PIN auth.
 function verifyPassword(password: string, stored: string): boolean {
   const [salt, hash] = stored.split(":");
   if (!salt || !hash) return false;
@@ -21,7 +17,6 @@ function verifyPassword(password: string, stored: string): boolean {
   return timingSafeEqual(hashBuf, testBuf);
 }
 
-// Sign a session token using MIGRATE_SECRET (same scheme as driver auth).
 function signSession(userId: string, expiry: number): string {
   const secret = process.env.MIGRATE_SECRET || "";
   const payload = `${userId}.${expiry}`;
@@ -107,3 +102,7 @@ export async function DELETE() {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
+    maxAge: 0,
+  });
+  return res;
+}
