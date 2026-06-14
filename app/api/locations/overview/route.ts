@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -10,8 +10,8 @@ export const maxDuration = 30;
 // and a breakdown of in-warehouse stock by battery model code.
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const signedIn = await isSignedIn();
+    if (!signedIn) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
