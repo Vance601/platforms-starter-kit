@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -8,6 +9,14 @@ export const maxDuration = 30;
 // Includes who currently holds each truck (for the handoff display).
 export async function GET() {
   try {
+    const signedIn = await isSignedIn();
+    if (!signedIn) {
+      return NextResponse.json(
+        { success: false, error: "Not signed in." },
+        { status: 401 }
+      );
+    }
+
     const { rows } = await sql`
       SELECT trucks.id,
              trucks.truck_number,
