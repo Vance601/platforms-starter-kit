@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Battery = {
   id: string;
@@ -79,7 +79,7 @@ function statusColor(status: string): string {
 
 // Aging thresholds: red at 14+ days on a truck with no sale, yellow at 7-13.
 function agingTier(days: number | null): "red" | "yellow" | "green" {
-  if (days === null) return "yellow"; // unknown load date — worth a look
+  if (days === null) return "yellow"; // unknown load date - worth a look
   if (days >= 14) return "red";
   if (days >= 7) return "yellow";
   return "green";
@@ -108,17 +108,15 @@ function agingBadge(tier: "red" | "yellow" | "green"): string {
 }
 
 export default function ReconcilePage() {
-  const [pw, setPw] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ReconcileData | null>(null);
 
   async function loadReport() {
-    if (!pw.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reconcile?pw=${encodeURIComponent(pw.trim())}`, {
+      const res = await fetch(`/api/reconcile`, {
         cache: "no-store",
       });
       const json: ReconcileData = await res.json();
@@ -135,37 +133,28 @@ export default function ReconcilePage() {
     }
   }
 
-  // Password gate
+  useEffect(() => {
+    loadReport();
+  }, []);
+
+  // Initial loading state (replaces the old password gate).
   if (!data) {
     return (
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Battery Reconciliation</h1>
-        <p className="text-sm text-muted-foreground">
-          Owner access required. Enter the admin password to view the report.
-        </p>
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") loadReport();
-          }}
-          placeholder="Admin password"
-          className="w-full rounded-lg border px-4 py-3"
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          onClick={loadReport}
-          disabled={!pw.trim() || loading}
-          className={
-            "rounded-lg px-4 py-2 font-medium " +
-            (!pw.trim() || loading
-              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-              : "bg-blue-600 text-white")
-          }
-        >
-          {loading ? "Loading…" : "View Report"}
-        </button>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <button
+              onClick={loadReport}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white"
+            >
+              Retry
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -196,7 +185,7 @@ export default function ReconcilePage() {
       {redFlags.length > 0 ? (
         <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3">
           <p className="font-semibold text-red-700">
-            ⚠️ {redFlags.length} batter{redFlags.length === 1 ? "y" : "ies"} unaccounted (missing)
+            {redFlags.length} batter{redFlags.length === 1 ? "y" : "ies"} unaccounted (missing)
           </p>
           <ul className="mt-1 text-sm text-red-600">
             {redFlags.map((f) => (
@@ -207,7 +196,7 @@ export default function ReconcilePage() {
       ) : (
         <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3">
           <p className="font-semibold text-green-700">
-            ✓ All batteries accounted for — no missing units.
+            All batteries accounted for - no missing units.
           </p>
         </div>
       )}
@@ -242,11 +231,11 @@ export default function ReconcilePage() {
         </div>
       ) : null}
 
-      {/* Core accountability — cores owed to MBS vs returned. Outstanding = money still owed back. */}
+      {/* Core accountability - cores owed to MBS vs returned. Outstanding = money still owed back. */}
       {coreAcct ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Core Accountability — MBS</h2>
+            <h2 className="text-lg font-semibold">Core Accountability - MBS</h2>
             {coreAcct.outstanding > 0 ? (
               <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
                 {coreAcct.outstanding} core{coreAcct.outstanding === 1 ? "" : "s"} not returned
@@ -289,10 +278,10 @@ export default function ReconcilePage() {
         </div>
       ) : null}
 
-      {/* Aging inventory — batteries on trucks, accountability by driver */}
+      {/* Aging inventory - batteries on trucks, accountability by driver */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Aging Inventory — Batteries On Trucks</h2>
+          <h2 className="text-lg font-semibold">Aging Inventory - Batteries On Trucks</h2>
           {agingRed > 0 ? (
             <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
               {agingRed} over 14 days
@@ -329,10 +318,10 @@ export default function ReconcilePage() {
                     <tr key={a.id} className={"border-b last:border-0 " + agingRowColor(tier)}>
                       <td className="px-3 py-2 font-mono">{a.barcode}</td>
                       <td className="px-3 py-2">
-                        {a.truck_number ? `#${a.truck_number}` : "—"}
+                        {a.truck_number ? `#${a.truck_number}` : "-"}
                       </td>
-                      <td className="px-3 py-2">{a.loaded_by || "—"}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{a.current_holder || "—"}</td>
+                      <td className="px-3 py-2">{a.loaded_by || "-"}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{a.current_holder || "-"}</td>
                       <td className="px-3 py-2">
                         <span className={"rounded-full px-2 py-0.5 text-xs font-medium " + agingBadge(tier)}>
                           {a.days_on_truck === null ? "unknown" : `${a.days_on_truck} day${a.days_on_truck === 1 ? "" : "s"}`}
@@ -372,16 +361,16 @@ export default function ReconcilePage() {
                     ? `Truck #${b.on_truck_number}`
                     : b.status === "sold" && b.sold_on_call_number
                     ? `Call #${b.sold_on_call_number}`
-                    : "—"}
+                    : "-"}
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">
                   {b.is_warranty
                     ? b.replaces_barcode
-                      ? `Warranty — replaces ${b.replaces_barcode}`
-                      : `Warranty — ${b.warranty_note || "not in system"}`
+                      ? `Warranty - replaces ${b.replaces_barcode}`
+                      : `Warranty - ${b.warranty_note || "not in system"}`
                     : b.status === "sold"
                     ? `$${b.cost ?? "0.00"}`
-                    : "—"}
+                    : "-"}
                 </td>
               </tr>
             ))}
