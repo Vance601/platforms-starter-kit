@@ -1,4 +1,3 @@
-```
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { isSignedIn } from "@/lib/current-user";
@@ -12,7 +11,6 @@ export async function GET(req: Request) {
   try {
     const signedIn = await isSignedIn();
     if (!signedIn) {
-    
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
@@ -21,7 +19,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const start = searchParams.get("start"); // "YYYY-MM-DD"
-    const end   = searchParams.get("end");   // "YYYY-MM-DD"
+    const end = searchParams.get("end");     // "YYYY-MM-DD"
 
     if (!start || !end) {
       return NextResponse.json(
@@ -31,7 +29,6 @@ export async function GET(req: Request) {
     }
 
     // Inclusive range: from start 00:00:00 through end 23:59:59.
-    // Cast the params to timestamps; end is pushed to end-of-day.
     const { rows } = await sql`
       SELECT
         l.id   AS location_id,
@@ -40,18 +37,17 @@ export async function GET(req: Request) {
         bmod.code AS battery_code,
         COUNT(*)::int AS units_sold
       FROM batteries b
-      LEFT JOIN locations l       ON l.id = b.location_id
-      LEFT JOIN companies c       ON c.id = b.company_id
+      LEFT JOIN locations l        ON l.id = b.location_id
+      LEFT JOIN companies c        ON c.id = b.company_id
       LEFT JOIN battery_models bmod ON bmod.id = b.battery_model_id
       WHERE b.status = 'sold'
         AND b.sold_at IS NOT NULL
         AND b.sold_at >= ${start}::timestamp
-        AND b.sold_at <  (${end}::date + INTERVAL '1 day')
+        AND b.sold_at < (${end}::date + INTERVAL '1 day')
       GROUP BY l.id, l.name, c.name, bmod.code
       ORDER BY l.name NULLS LAST, units_sold DESC;
     `;
 
-    // Reshape flat rows into per-location groups with model breakdown.
     type ModelCount = { code: string; n: number };
     type LocationGroup = {
       location_id: string | null;
@@ -67,7 +63,7 @@ export async function GET(req: Request) {
     for (const r of rows) {
       const key = (r.location_id as string | null) ?? "unassigned";
       const name = (r.location_name as string | null) ?? "Unassigned location";
-      const code = (r.battery_code as string | null) ?? "—";
+      const code = (r.battery_code as string | null) ?? "-";
       const n = r.units_sold as number;
       grandTotal += n;
 
@@ -103,4 +99,3 @@ export async function GET(req: Request) {
     );
   }
 }
-```
