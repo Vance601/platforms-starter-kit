@@ -1,3 +1,4 @@
+```
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { isSignedIn } from "@/lib/current-user";
@@ -102,3 +103,4 @@ export async function GET(req: Request) {
     );
   }
 }
+```
