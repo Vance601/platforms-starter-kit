@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-// Owner-only. Same gate as warranty-report: ?pw= checked against MIGRATE_SECRET.
-function checkPw(req: NextRequest): boolean {
-  const pw = req.nextUrl.searchParams.get("pw");
-  return pw === process.env.MIGRATE_SECRET;
-}
 
 // GET: data needed to drive the "Mark cores returned" form.
 //   - locations: distinct company_id / location_id pairs that have owed cores
 //   - owedByModel: per location+model, how many cores are currently owed
 //     (used to pre-fill and to warn if an invoice lists more than are owed)
-export async function GET(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+export async function GET() {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   try {
@@ -67,8 +63,9 @@ export async function GET(req: NextRequest) {
 // If a line asks for more than are owed, we clear all that ARE owed and report
 // the shortfall as a warning (this gap = the accountability signal).
 export async function POST(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   let body: {
