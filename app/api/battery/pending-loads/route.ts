@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
       );
     }
-    const role = session.user.role;
-    if (role !== "owner" && role !== "manager") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to view load approvals." },
         { status: 403 }
