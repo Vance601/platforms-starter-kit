@@ -6,10 +6,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // GET: list every warranty replacement battery for the supplier claim report.
-// Columns the report needs: original purchase date (received_at),
-// Towbook call number (sold_on_call_number), and the wholesale cost paid (cost).
-// Also reports whether the warranty core has been returned yet (status = 'returned_core'),
-// shown for visibility - it does NOT filter the list (we report ALL warranties).
 export async function GET() {
   const signedIn = await isSignedIn();
   if (!signedIn) {
@@ -31,7 +27,6 @@ export async function GET() {
       ORDER BY b.received_at ASC NULLS LAST, b.barcode ASC;
     `;
 
-    // Total wholesale cost owed = sum of entered costs across all warranties.
     const { rows: totalRows } = await sql`
       SELECT COALESCE(SUM(cost), 0) AS total_owed
       FROM batteries
@@ -52,7 +47,6 @@ export async function GET() {
 }
 
 // POST: save the wholesale cost entered for one warranty battery.
-// Writes to batteries.cost. Only touches warranty batteries.
 export async function POST(req: NextRequest) {
   const signedIn = await isSignedIn();
   if (!signedIn) {
@@ -71,7 +65,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "batteryId is required." }, { status: 400 });
   }
 
-  // Parse and validate the cost. Must be a non-negative number.
   const costNum = typeof body.cost === "string" ? parseFloat(body.cost) : body.cost;
   if (costNum === undefined || costNum === null || isNaN(Number(costNum)) || Number(costNum) < 0) {
     return NextResponse.json(
@@ -81,8 +74,6 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Only update if the battery is actually a warranty battery - guard against
-    // accidentally rewriting a normal sale's cost through this endpoint.
     const { rows } = await sql`
       UPDATE batteries
       SET cost = ${Number(costNum)}
