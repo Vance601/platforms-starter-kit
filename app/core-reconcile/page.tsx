@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type DriverRow = {
   driver_name: string;
@@ -28,22 +29,17 @@ type ApiResponse = {
 };
 
 export default function CoreReconcilePage() {
-  const [pw, setPw] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drivers, setDrivers] = useState<DriverRow[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
 
   async function load() {
-    if (!pw.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/core-reconcile?pw=${encodeURIComponent(pw.trim())}`,
-        { cache: "no-store" }
-      );
+      const res = await fetch(`/api/core-reconcile`, { cache: "no-store" });
       const json: ApiResponse = await res.json();
       if (!json.success) {
         setError(json.error || "Could not load reconciliation.");
@@ -59,37 +55,24 @@ export default function CoreReconcilePage() {
     }
   }
 
+  useEffect(() => {
+    load();
+  }, []);
+
   if (!loaded) {
     return (
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Driver Core Reconciliation</h1>
-        <p className="text-sm text-gray-500">
-          Owner access required. Enter the admin password to view per-driver core
-          accountability.
-        </p>
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") load();
-          }}
-          placeholder="Admin password"
-          className="w-full rounded-lg border px-4 py-3"
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          onClick={load}
-          disabled={!pw.trim() || loading}
-          className={
-            "rounded-lg px-4 py-2 font-medium " +
-            (!pw.trim() || loading
-              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-              : "bg-blue-600 text-white")
-          }
-        >
-          {loading ? "Loading…" : "View"}
-        </button>
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <>
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <button onClick={load} className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white">
+              Retry
+            </button>
+          </>
+        )}
       </div>
     );
   }
