@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
