@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Warranty = {
   id: string;
@@ -21,26 +21,24 @@ type ReportData = {
 
 // Format an ISO date as YYYY-MM-DD (the original purchase date for the MBS report).
 function fmtDate(iso: string | null): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   return d.toISOString().split("T")[0];
 }
 
 export default function WarrantyReportPage() {
-  const [pw, setPw] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [warranties, setWarranties] = useState<Warranty[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   async function loadReport() {
-    if (!pw.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/warranty-report?pw=${encodeURIComponent(pw.trim())}`, {
+      const res = await fetch(`/api/warranty-report`, {
         cache: "no-store",
       });
       const json: ReportData = await res.json();
@@ -57,12 +55,17 @@ export default function WarrantyReportPage() {
     }
   }
 
+  // Load automatically on mount — the API authenticates via your session.
+  useEffect(() => {
+    loadReport();
+  }, []);
+
   // Save one warranty's wholesale cost to the DB.
   async function saveCost(batteryId: string, costValue: string) {
     setSavingId(batteryId);
     setError(null);
     try {
-      const res = await fetch(`/api/warranty-report?pw=${encodeURIComponent(pw.trim())}`, {
+      const res = await fetch(`/api/warranty-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ batteryId, cost: costValue }),
@@ -125,37 +128,24 @@ export default function WarrantyReportPage() {
     URL.revokeObjectURL(url);
   }
 
-  // Password gate
+  // Initial loading state (replaces the old password gate).
   if (!loaded) {
     return (
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Warranty Report — MBS Claims</h1>
-        <p className="text-sm text-muted-foreground">
-          Owner access required. Enter the admin password to view warranty claims.
-        </p>
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") loadReport();
-          }}
-          placeholder="Admin password"
-          className="w-full rounded-lg border px-4 py-3"
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          onClick={loadReport}
-          disabled={!pw.trim() || loading}
-          className={
-            "rounded-lg px-4 py-2 font-medium " +
-            (!pw.trim() || loading
-              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-              : "bg-blue-600 text-white")
-          }
-        >
-          {loading ? "Loading…" : "View Report"}
-        </button>
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <>
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <button
+              onClick={loadReport}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white"
+            >
+              Retry
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -229,7 +219,7 @@ export default function WarrantyReportPage() {
               {warranties.map((w) => (
                 <tr key={w.id} className="border-b last:border-0">
                   <td className="px-3 py-2">{fmtDate(w.received_at)}</td>
-                  <td className="px-3 py-2">{w.sold_on_call_number || "—"}</td>
+                  <td className="px-3 py-2">{w.sold_on_call_number || "-"}</td>
                   <td className="px-3 py-2 font-mono text-xs">{w.barcode}</td>
                   <td className="px-3 py-2">
                     {w.core_returned ? (
