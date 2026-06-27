@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 
 type SaleRow = {
@@ -48,27 +48,24 @@ function defaultEnd(): string {
 }
 
 export default function DriverSalesPage() {
-  const [pw, setPw] = useState("");
-  const [authed, setAuthed] = useState(false);
   const [start, setStart] = useState(defaultStart());
   const [end, setEnd] = useState(defaultEnd());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [rows, setRows] = useState<MergedRow[]>([]);
   const [loadedRange, setLoadedRange] = useState<{ start: string; end: string } | null>(null);
 
-  async function load(pwToUse: string) {
+  async function load() {
     setLoading(true);
     setError("");
     try {
       const res = await fetch(
-        `/api/driver-sales?pw=${encodeURIComponent(pwToUse)}&start=${start}&end=${end}`
+        `/api/driver-sales?start=${start}&end=${end}`
       );
       const data: ApiResponse = await res.json();
       if (!res.ok || !data.success) {
         if (res.status === 401) {
-          setError("Wrong password.");
-          setAuthed(false);
+          setError("Not signed in.");
         } else {
           setError(data.error || "Could not load report.");
         }
@@ -99,7 +96,7 @@ export default function DriverSalesPage() {
       for (const c of data.coresByDriver || []) {
         let row = map.get(c.driver_id);
         if (!row) {
-          // Driver returned cores but had no sales in range — still show them.
+          // Driver returned cores but had no sales in range - still show them.
           row = {
             driverId: c.driver_id,
             driverName: "(driver)",
@@ -120,12 +117,15 @@ export default function DriverSalesPage() {
 
       setRows(merged);
       setLoadedRange(data.range ? { start: data.range.start, end: data.range.end } : null);
-      setAuthed(true);
     } catch {
-      setError("Network error — try again.");
+      setError("Network error - try again.");
     }
     setLoading(false);
   }
+
+  useEffect(() => {
+    load();
+  }, []);
 
   function exportCSV() {
     if (rows.length === 0) return;
@@ -222,38 +222,6 @@ export default function DriverSalesPage() {
     fontSize: 14,
   };
 
-  // --- Password gate ---
-  if (!authed) {
-    return (
-      <div style={page}>
-        <Link href="/" style={backLink}>← Back to Dashboard</Link>
-        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>Driver Sales Report</h1>
-        <p style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
-          Owner access only. Enter the admin password to view.
-        </p>
-        <div style={card}>
-          <label style={label}>Admin password</label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input
-              style={{ ...input, minWidth: 220 }}
-              type="password"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") load(pw);
-              }}
-              placeholder="Password"
-            />
-            <button style={btn} onClick={() => load(pw)} disabled={loading}>
-              {loading ? "Checking…" : "View Report"}
-            </button>
-          </div>
-          {error && <div style={{ color: "#dc2626", marginTop: 10, fontSize: 14 }}>{error}</div>}
-        </div>
-      </div>
-    );
-  }
-
   const totalUnits = rows.reduce((s, r) => s + r.unitsSold, 0);
   const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
   const totalWarr = rows.reduce((s, r) => s + r.warranties, 0);
@@ -262,7 +230,7 @@ export default function DriverSalesPage() {
   // --- Report ---
   return (
     <div style={page}>
-      <Link href="/" style={backLink}>← Back to Dashboard</Link>
+      <Link href="/" style={backLink}>Back to Dashboard</Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>Driver Sales Report</h1>
         <button style={btnOutline} onClick={exportCSV} disabled={rows.length === 0}>
@@ -280,7 +248,7 @@ export default function DriverSalesPage() {
             <label style={label}>End date</label>
             <input style={input} type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
-          <button style={btn} onClick={() => load(pw)} disabled={loading}>
+          <button style={btn} onClick={() => load()} disabled={loading}>
             {loading ? "Loading…" : "Apply"}
           </button>
         </div>
@@ -294,7 +262,9 @@ export default function DriverSalesPage() {
       </div>
 
       <div style={card}>
-        {rows.length === 0 ? (
+        {loading && rows.length === 0 ? (
+          <p style={{ color: "#64748b", fontSize: 14 }}>Loading…</p>
+        ) : rows.length === 0 ? (
           <p style={{ color: "#64748b", fontSize: 14 }}>No driver activity in this date range.</p>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -319,7 +289,7 @@ export default function DriverSalesPage() {
                     <td style={td}>{r.coresReturned}</td>
                     <td style={td}>
                       {r.types.length === 0
-                        ? "—"
+                        ? "-"
                         : r.types.map((t) => `${t.name}: ${t.count}`).join(", ")}
                     </td>
                   </tr>
