@@ -1,36 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { getCurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// scrypt "salt:hash" — same scheme as migrate-drivers/set-pin.
+// scrypt "salt:hash" - same scheme as migrate-drivers/set-pin.
 function hashPin(pin: string): string {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync(pin, salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 
-// Owner password check — verified on EVERY request, server-side.
-function checkAdmin(req: NextRequest, body?: Record<string, unknown>): boolean {
-  const pw =
-    req.nextUrl.searchParams.get("pw") ||
-    (body?.pw as string | undefined) ||
-    req.headers.get("x-admin-pw") ||
-    "";
-  const expected = process.env.MIGRATE_SECRET || "";
-  return expected.length > 0 && pw === expected;
+// Owner/manager gate - verified on EVERY request via the session.
+async function requireManager(): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return {
+      ok: false,
+      res: NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 }),
+    };
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return {
+      ok: false,
+      res: NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 }),
+    };
+  }
+  return { ok: true };
 }
 
-const DENY = NextResponse.json(
-  { success: false, error: "Unauthorized" },
-  { status: 401 }
-);
-
-// GET — list all drivers (active + inactive) + who is on shift now.
-export async function GET(req: NextRequest) {
-  if (!checkAdmin(req)) return DENY;
+// GET - list all drivers (active + inactive) + who is on shift now.
+export async function GET() {
+  const gate = await requireManager();
+  if (!gate.ok) return gate.res;
   try {
     const { rows: drivers } = await sql`
       SELECT drivers.id,
@@ -42,7 +46,7 @@ export async function GET(req: NextRequest) {
       ORDER BY drivers.active DESC, drivers.name;
     `;
 
-    // Open shifts (ended_at IS NULL) — who is on which truck right now.
+    // Open shifts (ended_at IS NULL) - who is on which truck right now.
     const { rows: onShift } = await sql`
       SELECT truck_shifts.driver_id, trucks.truck_number
       FROM truck_shifts
@@ -66,11 +70,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST — add a new driver (seeded PIN 0000).
+// POST - add a new driver (seeded PIN 0000).
 export async function POST(req: NextRequest) {
+  const gate = await requireManager();
+  if (!gate.ok) return gate.res;
   try {
     const body = await req.json().catch(() => ({}));
-    if (!checkAdmin(req, body)) return DENY;
 
     const name = (body.name as string | undefined)?.trim();
     const company = (body.company as string | undefined)?.trim();
@@ -107,12 +112,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH — edit name/company, toggle active, or reset PIN.
+// PATCH - edit name/company, toggle active, or reset PIN.
 // body.action: "edit" | "toggleActive" | "resetPin"
 export async function PATCH(req: NextRequest) {
+  const gate = await requireManager();
+  if (!gate.ok) return gate.res;
   try {
     const body = await req.json().catch(() => ({}));
-    if (!checkAdmin(req, body)) return DENY;
 
     const driverId = body.driverId as string | undefined;
     const action = body.action as string | undefined;
@@ -170,7 +176,7 @@ export async function PATCH(req: NextRequest) {
       `;
       return NextResponse.json({
         success: true,
-        message: "PIN reset to 0000 — driver sets a new one at next login",
+        message: "PIN reset to 0000 - driver sets a new one at next login",
       });
     }
 
@@ -180,7 +186,7 @@ export async function PATCH(req: NextRequest) {
     );
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { success: false, error: `Unknown error` },
       { status: 500 }
     );
   }
