@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
       );
     }
-    const role = session.user.role;
-    if (role !== "owner" && role !== "manager") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to approve loads." },
         { status: 403 }
@@ -31,13 +30,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const approver = session.user.name || session.user.email || session.user.id;
+    // Resolve a human-readable approver label for the audit note.
+    // getCurrentUser() returns role/ids but not name/email, so look them up.
+    let approver = user.userId;
+    try {
+      const { rows: who } = await sql`
+        SELECT name, email FROM users WHERE id = ${user.userId} LIMIT 1;
+      `;
+      if (who.length > 0) {
+        approver = (who[0].name as string) || (who[0].email as string) || user.userId;
+      }
+    } catch {
+      // fall back to userId if the lookup fails
+    }
 
     const { rows } = await sql`
       UPDATE battery_movements
       SET approval_status = 'approved',
           approved_at = now(),
-          recorded_by_id = ${session.user.id},
+          recorded_by_id = ${user.userId},
           notes = COALESCE(notes, '') || ${` | Approved by ${approver}`}
       WHERE id = ${movementId}
         AND approval_status = 'pending'
