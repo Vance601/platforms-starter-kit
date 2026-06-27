@@ -26,6 +26,11 @@ function signSession(userId: string, expiry: number): string {
 
 const SESSION_MAX_AGE = 60 * 60 * 12; // 12 hours
 
+// In production, scope the cookie to the apex + all subdomains so it survives
+// www <-> apex navigation. Undefined in dev (host-only on localhost).
+const COOKIE_DOMAIN =
+  process.env.NODE_ENV === "production" ? ".battery-city.com" : undefined;
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -83,6 +88,7 @@ export async function POST(req: NextRequest) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
+      domain: COOKIE_DOMAIN,
       maxAge: SESSION_MAX_AGE,
     });
 
@@ -102,6 +108,7 @@ export async function DELETE() {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
+    domain: COOKIE_DOMAIN,
     maxAge: 0,
   });
   return res;
