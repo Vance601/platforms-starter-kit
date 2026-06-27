@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -9,15 +9,14 @@ export const maxDuration = 30;
 // GET — lists for the page: in-warehouse batteries + all trucks.
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
       );
     }
-    const role = session.user.role;
-    if (role !== "owner" && role !== "manager") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to assign batteries." },
         { status: 403 }
@@ -64,15 +63,14 @@ export async function GET() {
 // row, so a battery on a truck is always traceable to a person.
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
       );
     }
-    const role = session.user.role;
-    if (role !== "owner" && role !== "manager") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to assign batteries." },
         { status: 403 }
@@ -89,7 +87,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const assigner = session.user.name || session.user.email || session.user.id;
+    // Resolve a human-readable assigner label for the audit note.
+    // getCurrentUser() returns role/ids but not name/email, so look them up.
+    let assigner = user.userId;
+    try {
+      const { rows: who } = await sql`
+        SELECT name, email FROM users WHERE id = ${user.userId} LIMIT 1;
+      `;
+      if (who.length > 0) {
+        assigner = (who[0].name as string) || (who[0].email as string) || user.userId;
+      }
+    } catch {
+      // fall back to userId if the lookup fails
+    }
 
     // Pull the truck AND its current driver, so we can stamp the driver too.
     const { rows: truckRows } = await sql`
@@ -140,7 +150,7 @@ export async function POST(req: NextRequest) {
       VALUES
         (${movementId}, ${battery.id}, 'in_warehouse', 'on_truck',
          ${truck.id}, ${driverId},
-         'approved', now(), ${session.user.id},
+         'approved', now(), ${user.userId},
          ${`Assigned to truck #${truck.truck_number} by admin ${assigner}`});
     `;
 
