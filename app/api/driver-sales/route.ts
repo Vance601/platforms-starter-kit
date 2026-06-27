@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Owner-only. Matches the admin pattern: ?pw= checked against MIGRATE_SECRET.
-function checkPw(req: NextRequest): boolean {
-  const pw = req.nextUrl.searchParams.get("pw");
-  return pw === process.env.MIGRATE_SECRET;
-}
-
-// GET ?pw=...&start=YYYY-MM-DD&end=YYYY-MM-DD
+// GET ?start=YYYY-MM-DD&end=YYYY-MM-DD
 // Owner-facing driver sales report. For each driver, over the date range:
 //   - units sold (sale movements: to_status = 'sold')
 //   - warranties (of those sold, how many were is_warranty = true)
@@ -18,8 +13,9 @@ function checkPw(req: NextRequest): boolean {
 //   - cores returned (return movements: to_status = 'returned_core')
 // All money figures, where present, are WHOLESALE COST only (batteries.cost). No retail.
 export async function GET(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   // Date range. Default to the last 30 days if not provided.
