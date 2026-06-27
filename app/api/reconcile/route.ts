@@ -1,15 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-export async function GET(req: NextRequest) {
-  // Owner-only. Matches the admin pattern: ?pw= checked against MIGRATE_SECRET.
-  const pw = req.nextUrl.searchParams.get("pw");
-  if (pw !== process.env.MIGRATE_SECRET) {
+export async function GET() {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
     return NextResponse.json(
-      { success: false, error: "Unauthorized." },
+      { success: false, error: "Not signed in." },
       { status: 401 }
     );
   }
