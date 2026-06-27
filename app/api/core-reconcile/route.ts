@@ -1,6 +1,6 @@
 // app/api/core-reconcile/route.ts
 // READ-ONLY per-driver core reconciliation.
-// Owner-only: ?pw= checked against MIGRATE_SECRET.
+// Signed-in users only.
 // Driver attribution = battery_movements.driver_id (drivers table).
 //
 // RULE: REGULAR sales owe a core back to the warehouse, tracked in core_returns.
@@ -8,20 +8,17 @@
 // so they are shown for visibility but NOT counted in this "still owes" figure.
 //   still_owes = regular_sales - regular_cores_turned_in
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-function checkPw(req: NextRequest): boolean {
-  const pw = req.nextUrl.searchParams.get("pw");
-  return pw === process.env.MIGRATE_SECRET;
-}
-
-export async function GET(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+export async function GET() {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   try {
