@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -10,12 +10,11 @@ export const maxDuration = 30;
 // with their company name and live battery count. Owner/manager only.
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
     }
-    const role = (session.user as { role?: string }).role;
-    if (role !== "owner" && role !== "manager") {
+    if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
     }
 
