@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Driver = {
   id: string;
@@ -13,8 +13,8 @@ type Driver = {
 const COMPANIES = ["phx", "tucson", "abq"];
 
 export default function AdminDrivers() {
-  const [pw, setPw] = useState("");
-  const [authed, setAuthed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,12 +28,10 @@ export default function AdminDrivers() {
   const [editName, setEditName] = useState("");
   const [editCompany, setEditCompany] = useState("phx");
 
-  async function loadDrivers(password: string) {
+  async function loadDrivers() {
     setError("");
     try {
-      const res = await fetch(
-        `/api/admin/drivers?pw=${encodeURIComponent(password)}`
-      );
+      const res = await fetch(`/api/admin/drivers`);
       const data = await res.json();
       if (!data.success) {
         setError(data.error || "Failed to load");
@@ -47,12 +45,14 @@ export default function AdminDrivers() {
     }
   }
 
-  async function handleLogin() {
-    setBusy(true);
-    const ok = await loadDrivers(pw);
-    if (ok) setAuthed(true);
-    setBusy(false);
-  }
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const ok = await loadDrivers();
+      if (ok) setLoaded(true);
+      setLoading(false);
+    })();
+  }, []);
 
   async function addDriver() {
     if (!newName.trim()) {
@@ -65,13 +65,13 @@ export default function AdminDrivers() {
       const res = await fetch("/api/admin/drivers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pw, name: newName.trim(), company: newCompany }),
+        body: JSON.stringify({ name: newName.trim(), company: newCompany }),
       });
       const data = await res.json();
       if (!data.success) setError(data.error || "Failed to add");
       else {
         setNewName("");
-        await loadDrivers(pw);
+        await loadDrivers();
       }
     } catch {
       setError("Network error");
@@ -86,11 +86,11 @@ export default function AdminDrivers() {
       const res = await fetch("/api/admin/drivers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pw, ...body }),
+        body: JSON.stringify({ ...body }),
       });
       const data = await res.json();
       if (!data.success) setError(data.error || "Action failed");
-      else await loadDrivers(pw);
+      else await loadDrivers();
     } catch {
       setError("Network error");
     }
@@ -139,32 +139,31 @@ export default function AdminDrivers() {
     fontWeight: 600,
   };
 
-  if (!authed) {
+  if (!loaded) {
     return (
       <div style={wrap}>
         <div style={{ ...inner, maxWidth: 360 }}>
-          <h1 style={{ fontSize: 22, marginBottom: 16 }}>Admin — Drivers</h1>
-          <p style={{ color: "#94a3b8", marginBottom: 12, fontSize: 14 }}>
-            Enter the admin password.
-          </p>
-          {error && (
-            <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
+          <h1 style={{ fontSize: 22, marginBottom: 16 }}>Admin - Drivers</h1>
+          {loading ? (
+            <p style={{ color: "#94a3b8", fontSize: 14 }}>Loading…</p>
+          ) : (
+            <>
+              {error && (
+                <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
+              )}
+              <button
+                onClick={async () => {
+                  setLoading(true);
+                  const ok = await loadDrivers();
+                  if (ok) setLoaded(true);
+                  setLoading(false);
+                }}
+                style={{ ...btn, background: "#22c55e", color: "#0f172a", width: "100%", padding: 12 }}
+              >
+                Retry
+              </button>
+            </>
           )}
-          <input
-            type="password"
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            placeholder="Admin password"
-            style={{ ...input, width: "100%", marginBottom: 12 }}
-          />
-          <button
-            onClick={handleLogin}
-            disabled={busy}
-            style={{ ...btn, background: "#22c55e", color: "#0f172a", width: "100%", padding: 12 }}
-          >
-            {busy ? "Checking…" : "Enter"}
-          </button>
         </div>
       </div>
     );
@@ -278,7 +277,7 @@ export default function AdminDrivers() {
                     </div>
                     {d.onShiftTruck && (
                       <div style={{ fontSize: 12, color: "#fbbf24", marginTop: 2 }}>
-                        On shift — Truck #{d.onShiftTruck}
+                        On shift - Truck #{d.onShiftTruck}
                       </div>
                     )}
                   </div>
