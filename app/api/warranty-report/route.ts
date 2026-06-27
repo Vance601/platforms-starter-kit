@@ -1,23 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Owner-only. Matches the admin pattern: ?pw= checked against MIGRATE_SECRET.
-function checkPw(req: NextRequest): boolean {
-  const pw = req.nextUrl.searchParams.get("pw");
-  return pw === process.env.MIGRATE_SECRET;
-}
-
-// GET: list every warranty replacement battery for the MBS claim report.
+// GET: list every warranty replacement battery for the supplier claim report.
 // Columns the report needs: original purchase date (received_at),
-// Towbook call number (sold_on_call_number), and the wholesale cost paid to MBS (cost).
+// Towbook call number (sold_on_call_number), and the wholesale cost paid (cost).
 // Also reports whether the warranty core has been returned yet (status = 'returned_core'),
-// shown for visibility — it does NOT filter the list (we report ALL warranties).
-export async function GET(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+// shown for visibility - it does NOT filter the list (we report ALL warranties).
+export async function GET() {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   try {
@@ -35,7 +31,7 @@ export async function GET(req: NextRequest) {
       ORDER BY b.received_at ASC NULLS LAST, b.barcode ASC;
     `;
 
-    // Total wholesale cost MBS owes = sum of entered costs across all warranties.
+    // Total wholesale cost owed = sum of entered costs across all warranties.
     const { rows: totalRows } = await sql`
       SELECT COALESCE(SUM(cost), 0) AS total_owed
       FROM batteries
@@ -56,10 +52,11 @@ export async function GET(req: NextRequest) {
 }
 
 // POST: save the wholesale cost entered for one warranty battery.
-// Writes to batteries.cost (Option A). Only touches warranty batteries.
+// Writes to batteries.cost. Only touches warranty batteries.
 export async function POST(req: NextRequest) {
-  if (!checkPw(req)) {
-    return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
   }
 
   let body: { batteryId?: string; cost?: number | string };
@@ -84,7 +81,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Only update if the battery is actually a warranty battery — guard against
+    // Only update if the battery is actually a warranty battery - guard against
     // accidentally rewriting a normal sale's cost through this endpoint.
     const { rows } = await sql`
       UPDATE batteries
