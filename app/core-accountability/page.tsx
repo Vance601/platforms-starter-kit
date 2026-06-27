@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type OutstandingRow = {
   driver_name: string;
@@ -49,9 +49,8 @@ const STOCK_CODES = [
 ];
 
 export default function CoreAccountabilityPage() {
-  const [pw, setPw] = useState("");
   const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [report, setReport] = useState<ReportResponse | null>(null);
@@ -68,19 +67,15 @@ export default function CoreAccountabilityPage() {
   const [clearWarnings, setClearWarnings] = useState<string[]>([]);
 
   async function loadAll() {
-    if (!pw.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      // Report (Piece 1 route is open/no-pw; fetch it plainly)
+      // Report
       const repRes = await fetch("/api/core-accountability", { cache: "no-store" });
       const repJson: ReportResponse = await repRes.json();
 
-      // Form data (Piece 2 route is gated by pw)
-      const formRes = await fetch(
-        `/api/core-returns?pw=${encodeURIComponent(pw.trim())}`,
-        { cache: "no-store" }
-      );
+      // Form data (cores owed by model, locations)
+      const formRes = await fetch("/api/core-returns", { cache: "no-store" });
       const formJson: FormData = await formRes.json();
 
       if (!formJson.success) {
@@ -104,6 +99,10 @@ export default function CoreAccountabilityPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    loadAll();
+  }, []);
 
   function setLine(i: number, key: "modelCode" | "qty", val: string) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, [key]: val } : l)));
@@ -146,7 +145,7 @@ export default function CoreAccountabilityPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/core-returns?pw=${encodeURIComponent(pw.trim())}`, {
+      const res = await fetch("/api/core-returns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId, locationId, lines: cleanLines }),
@@ -175,37 +174,24 @@ export default function CoreAccountabilityPage() {
     }
   }
 
-  // ---- Password gate ----
+  // Initial loading state (replaces the old password gate).
   if (!loaded) {
     return (
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Core Accountability</h1>
-        <p className="text-sm text-gray-500">
-          Owner access required. Enter the admin password to view and clear cores.
-        </p>
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") loadAll();
-          }}
-          placeholder="Admin password"
-          className="w-full rounded-lg border px-4 py-3"
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          onClick={loadAll}
-          disabled={!pw.trim() || loading}
-          className={
-            "rounded-lg px-4 py-2 font-medium " +
-            (!pw.trim() || loading
-              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-              : "bg-blue-600 text-white")
-          }
-        >
-          {loading ? "Loading…" : "View"}
-        </button>
+        {loading ? (
+          <p className="text-sm text-gray-500">Loading…</p>
+        ) : (
+          <>
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <button
+              onClick={loadAll}
+              className="rounded-lg bg-blue-600 px-4 py-2 font-medium text-white"
+            >
+              Retry
+            </button>
+          </>
+        )}
       </div>
     );
   }
@@ -290,7 +276,7 @@ export default function CoreAccountabilityPage() {
         ) : null}
         {clearWarnings.length > 0 ? (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            <p className="font-medium">Heads up — invoice exceeded owed cores:</p>
+            <p className="font-medium">Heads up - invoice exceeded owed cores:</p>
             <ul className="mt-1 list-disc pl-5">
               {clearWarnings.map((w, i) => (
                 <li key={i}>{w}</li>
@@ -366,7 +352,7 @@ export default function CoreAccountabilityPage() {
                     className="ml-auto rounded px-2 py-1 text-xs text-gray-400 hover:text-red-600"
                     title="Remove line"
                   >
-                    ✕
+                    Remove
                   </button>
                 </div>
               );
