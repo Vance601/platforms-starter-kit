@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { isSignedIn } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const signedIn = await isSignedIn();
+  if (!signedIn) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -31,9 +31,7 @@ export async function GET() {
       LEFT JOIN battery_models ON battery_models.id = batteries.battery_model_id
       JOIN locations ON locations.id = batteries.location_id
       JOIN companies ON companies.id = batteries.company_id
-      JOIN user_companies ON user_companies.company_id = companies.id
       LEFT JOIN mbs_invoices ON mbs_invoices.id = batteries.mbs_invoice_id
-      WHERE user_companies.user_id = ${session.user.id}
       ORDER BY batteries.received_at DESC, batteries.created_at DESC;
     `;
 
@@ -46,11 +44,9 @@ export async function GET() {
         COUNT(batteries.id)::int AS count
       FROM locations
       JOIN companies ON companies.id = locations.company_id
-      JOIN user_companies ON user_companies.company_id = companies.id
       LEFT JOIN batteries ON batteries.location_id = locations.id
         AND batteries.status = 'in_warehouse'
-      WHERE user_companies.user_id = ${session.user.id}
-        AND locations.active = TRUE
+      WHERE locations.active = TRUE
       GROUP BY locations.id, locations.name, locations.slug, companies.name
       ORDER BY companies.name, locations.name;
     `;
@@ -62,9 +58,6 @@ export async function GET() {
       FROM battery_types
       LEFT JOIN batteries ON batteries.battery_type_id = battery_types.id
         AND batteries.status = 'in_warehouse'
-      LEFT JOIN companies ON companies.id = batteries.company_id
-      LEFT JOIN user_companies ON user_companies.company_id = companies.id
-        AND user_companies.user_id = ${session.user.id}
       GROUP BY battery_types.code
       ORDER BY battery_types.code;
     `;
