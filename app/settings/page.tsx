@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserManagement } from "@/components/settings/user-management"
 import { LocationSettings } from "@/components/settings/location-settings"
 import { SystemSettings } from "@/components/settings/system-settings"
+import { SupplierManagement } from "@/components/settings/supplier-management"
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("users")
@@ -14,13 +15,14 @@ export default function SettingsPage() {
     <div className="container mx-auto py-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Manage your system settings, users, and locations</p>
+        <p className="text-muted-foreground">Manage your system settings, users, locations, and suppliers</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="users">User Management</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
+          <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
 
@@ -44,6 +46,18 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent>
               <LocationSettings />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="suppliers" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Suppliers</CardTitle>
+              <CardDescription>Manage the suppliers your cores and warranties go back to</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SupplierManagement />
             </CardContent>
           </Card>
         </TabsContent>
