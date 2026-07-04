@@ -164,7 +164,7 @@ export function LocationSettings() {
   async function handleDelete(loc: Location) {
     const warn =
       loc.battery_count > 0
-        ? `"${loc.name}" has ${loc.battery_count} batter${loc.battery_count === 1 ? "y" : "ies"} tied to it. It will be marked inactive (hidden), but its history is kept. Continue?`
+        ? `"${loc.name}" has ${loc.battery_count} batteries tied to it. It will be marked inactive (hidden), but its history is kept. Continue?`
         : `Mark "${loc.name}" inactive? It will be hidden from pickers but its history is kept.`
     if (!confirm(warn)) return
     setError(null)
@@ -268,7 +268,7 @@ export function LocationSettings() {
                 </CardTitle>
                 <CardDescription>
                   {location.company_name || "Unassigned"}
-                  {!location.active ? " - Inactive" : ""}
+                  {location.active ? "" : " - Inactive"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -278,4 +278,84 @@ export function LocationSettings() {
                 </div>
                 <div className="space-y-1 text-sm mt-2">
                   <p className="text-muted-foreground">Batteries:</p>
-                  <p>{location.battery_count}
+                  <p>{location.battery_count}</p>
+                </div>
+              </CardContent>
+              <CardFooter className="flex justify-between pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditLoc(location)
+                    setIsEditOpen(true)
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 hover:text-red-700"
+                  onClick={() => handleDelete(location)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Location</DialogTitle>
+            <DialogDescription>Update location information.</DialogDescription>
+          </DialogHeader>
+
+          {editLoc && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-name" className="text-right">Name</Label>
+                <Input id="edit-name" value={editLoc.name}
+                  onChange={(e) => setEditLoc({ ...editLoc, name: e.target.value })}
+                  className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-address" className="text-right">Address</Label>
+                <Input id="edit-address" value={editLoc.address || ""}
+                  onChange={(e) => setEditLoc({ ...editLoc, address: e.target.value })}
+                  className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-city" className="text-right">City</Label>
+                <Input id="edit-city" value={editLoc.city || ""}
+                  onChange={(e) => setEditLoc({ ...editLoc, city: e.target.value })}
+                  className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-state" className="text-right">State</Label>
+                <Input id="edit-state" value={editLoc.state || ""}
+                  onChange={(e) => setEditLoc({ ...editLoc, state: e.target.value })}
+                  className="col-span-3" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-zip" className="text-right">ZIP</Label>
+                <Input id="edit-zip" value={editLoc.zip || ""}
+                  onChange={(e) => setEditLoc({ ...editLoc, zip: e.target.value })}
+                  className="col-span-3" />
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+            <Button onClick={handleEdit} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
