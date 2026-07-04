@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,72 +16,171 @@ import {
 } from "@/components/ui/dialog"
 import { Plus, MapPin, Edit, Trash2 } from "lucide-react"
 
-// Mock data for locations
-const initialLocations = [
-  {
-    id: "1",
-    name: "Broadway",
-    address: "123 Broadway Ave, Phoenix, AZ 85001",
-    phone: "(602) 555-1234",
-    isWarehouse: true,
-  },
-  {
-    id: "2",
-    name: "Camelback",
-    address: "456 Camelback Rd, Phoenix, AZ 85016",
-    phone: "(602) 555-5678",
-    isWarehouse: true,
-  },
-]
+type Company = { id: string; name: string; slug: string; active: boolean }
+type Location = {
+  id: string
+  name: string
+  slug: string
+  company_id: string
+  company_name: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
+  active: boolean
+  battery_count: number
+}
 
 export function LocationSettings() {
-  const [locations, setLocations] = useState(initialLocations)
-  const [isAddLocationOpen, setIsAddLocationOpen] = useState(false)
-  const [isEditLocationOpen, setIsEditLocationOpen] = useState(false)
-  const [selectedLocation, setSelectedLocation] = useState<any>(null)
+  const [companies, setCompanies] = useState<Company[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
 
-  // Form state for new location
-  const [newLocation, setNewLocation] = useState({
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const [newLoc, setNewLoc] = useState({
     name: "",
+    companyId: "",
     address: "",
-    phone: "",
-    isWarehouse: true,
+    city: "",
+    state: "",
+    zip: "",
   })
 
-  // Reset form
-  const resetForm = () => {
-    setNewLocation({
+  const [editLoc, setEditLoc] = useState<Location | null>(null)
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/locations", { cache: "no-store" })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Failed to load locations")
+      setCompanies(json.companies || [])
+      setLocations(json.locations || [])
+      if (!newLoc.companyId && json.companies?.length) {
+        setNewLoc((prev) => ({ ...prev, companyId: json.companies[0].id }))
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load locations")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function resetNew() {
+    setNewLoc({
       name: "",
+      companyId: companies.length ? companies[0].id : "",
       address: "",
-      phone: "",
-      isWarehouse: true,
+      city: "",
+      state: "",
+      zip: "",
     })
   }
 
-  // Handle adding a new location
-  const handleAddLocation = () => {
-    const locationToAdd = {
-      ...newLocation,
-      id: crypto.randomUUID(),
+  async function handleAdd() {
+    setError(null)
+    setFlash(null)
+    if (!newLoc.name.trim()) {
+      setError("Location name is required.")
+      return
     }
-    setLocations([...locations, locationToAdd])
-    setIsAddLocationOpen(false)
-    resetForm()
+    if (!newLoc.companyId) {
+      setError("Please choose a company.")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/locations/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newLoc.name.trim(),
+          companyId: newLoc.companyId,
+          address: newLoc.address.trim() || undefined,
+          city: newLoc.city.trim() || undefined,
+          state: newLoc.state.trim() || undefined,
+          zip: newLoc.zip.trim() || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Failed to add location")
+      setFlash(`Location "${json.name}" added.`)
+      setIsAddOpen(false)
+      resetNew()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add location")
+    } finally {
+      setSaving(false)
+    }
   }
 
-  // Handle editing a location
-  const handleEditLocation = () => {
-    if (selectedLocation) {
-      setLocations(locations.map((loc) => (loc.id === selectedLocation.id ? selectedLocation : loc)))
-      setIsEditLocationOpen(false)
-      setSelectedLocation(null)
+  async function handleEdit() {
+    if (!editLoc) return
+    setError(null)
+    setFlash(null)
+    if (!editLoc.name.trim()) {
+      setError("Location name is required.")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/locations/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editLoc.id,
+          name: editLoc.name.trim(),
+          address: (editLoc.address || "").trim() || undefined,
+          city: (editLoc.city || "").trim() || undefined,
+          state: (editLoc.state || "").trim() || undefined,
+          zip: (editLoc.zip || "").trim() || undefined,
+        }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Failed to update location")
+      setFlash(`Location "${json.name}" updated.`)
+      setIsEditOpen(false)
+      setEditLoc(null)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update location")
+    } finally {
+      setSaving(false)
     }
   }
 
-  // Handle deleting a location
-  const handleDeleteLocation = (id: string) => {
-    if (confirm("Are you sure you want to delete this location?")) {
-      setLocations(locations.filter((loc) => loc.id !== id))
+  async function handleDelete(loc: Location) {
+    const warn =
+      loc.battery_count > 0
+        ? `"${loc.name}" has ${loc.battery_count} batter${loc.battery_count === 1 ? "y" : "ies"} tied to it. It will be marked inactive (hidden), but its history is kept. Continue?`
+        : `Mark "${loc.name}" inactive? It will be hidden from pickers but its history is kept.`
+    if (!confirm(warn)) return
+    setError(null)
+    setFlash(null)
+    try {
+      const res = await fetch("/api/locations/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: loc.id }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error || "Failed to delete location")
+      setFlash(`Location "${json.name}" marked inactive.`)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete location")
     }
   }
 
@@ -90,7 +189,7 @@ export function LocationSettings() {
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-medium">Locations</h3>
 
-        <Dialog open={isAddLocationOpen} onOpenChange={setIsAddLocationOpen}>
+        <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -100,195 +199,83 @@ export function LocationSettings() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Location</DialogTitle>
-              <DialogDescription>Add a new warehouse or service location.</DialogDescription>
+              <DialogDescription>Add a warehouse or service location under one of your companies.</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="name" className="text-right">
-                  Name
-                </Label>
-                <Input
-                  id="name"
-                  value={newLocation.name}
-                  onChange={(e) => setNewLocation({ ...newLocation, name: e.target.value })}
-                  className="col-span-3"
-                />
+                <Label htmlFor="name" className="text-right">Name</Label>
+                <Input id="name" value={newLoc.name}
+                  onChange={(e) => setNewLoc({ ...newLoc, name: e.target.value })}
+                  className="col-span-3" />
               </div>
-
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="address" className="text-right">
-                  Address
-                </Label>
-                <Input
-                  id="address"
-                  value={newLocation.address}
-                  onChange={(e) => setNewLocation({ ...newLocation, address: e.target.value })}
-                  className="col-span-3"
-                />
+                <Label htmlFor="company" className="text-right">Company</Label>
+                <select id="company" value={newLoc.companyId}
+                  onChange={(e) => setNewLoc({ ...newLoc, companyId: e.target.value })}
+                  className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">Select a company...</option>
+                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
-
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="phone" className="text-right">
-                  Phone
-                </Label>
-                <Input
-                  id="phone"
-                  value={newLocation.phone}
-                  onChange={(e) => setNewLocation({ ...newLocation, phone: e.target.value })}
-                  className="col-span-3"
-                />
+                <Label htmlFor="address" className="text-right">Address</Label>
+                <Input id="address" value={newLoc.address}
+                  onChange={(e) => setNewLoc({ ...newLoc, address: e.target.value })}
+                  className="col-span-3" placeholder="optional" />
               </div>
-
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="isWarehouse" className="text-right">
-                  Type
-                </Label>
-                <div className="col-span-3 flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="isWarehouse"
-                    checked={newLocation.isWarehouse}
-                    onChange={(e) => setNewLocation({ ...newLocation, isWarehouse: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="isWarehouse" className="text-sm font-normal">
-                    This is a warehouse location
-                  </Label>
-                </div>
+                <Label htmlFor="city" className="text-right">City</Label>
+                <Input id="city" value={newLoc.city}
+                  onChange={(e) => setNewLoc({ ...newLoc, city: e.target.value })}
+                  className="col-span-3" placeholder="optional" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="state" className="text-right">State</Label>
+                <Input id="state" value={newLoc.state}
+                  onChange={(e) => setNewLoc({ ...newLoc, state: e.target.value })}
+                  className="col-span-3" placeholder="optional" />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="zip" className="text-right">ZIP</Label>
+                <Input id="zip" value={newLoc.zip}
+                  onChange={(e) => setNewLoc({ ...newLoc, zip: e.target.value })}
+                  className="col-span-3" placeholder="optional" />
               </div>
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddLocationOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddLocation}>Add Location</Button>
+              <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancel</Button>
+              <Button onClick={handleAdd} disabled={saving}>{saving ? "Adding..." : "Add Location"}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {locations.map((location) => (
-          <Card key={location.id}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xl flex items-center">
-                <MapPin className="h-5 w-5 mr-2 text-muted-foreground" />
-                {location.name}
-              </CardTitle>
-              <CardDescription>{location.isWarehouse ? "Warehouse" : "Service Location"}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-1 text-sm">
-                <p className="text-muted-foreground">Address:</p>
-                <p>{location.address}</p>
-              </div>
-              <div className="space-y-1 text-sm mt-2">
-                <p className="text-muted-foreground">Phone:</p>
-                <p>{location.phone}</p>
-              </div>
-            </CardContent>
-            <CardFooter className="flex justify-between pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedLocation(location)
-                  setIsEditLocationOpen(true)
-                }}
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Edit
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-red-600 hover:text-red-700"
-                onClick={() => handleDeleteLocation(location.id)}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
+      {flash && <p className="text-sm text-green-600">{flash}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {/* Edit Location Dialog */}
-      <Dialog open={isEditLocationOpen} onOpenChange={setIsEditLocationOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Location</DialogTitle>
-            <DialogDescription>Update location information.</DialogDescription>
-          </DialogHeader>
-
-          {selectedLocation && (
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-name" className="text-right">
-                  Name
-                </Label>
-                <Input
-                  id="edit-name"
-                  value={selectedLocation.name}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, name: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-address" className="text-right">
-                  Address
-                </Label>
-                <Input
-                  id="edit-address"
-                  value={selectedLocation.address}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, address: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-phone" className="text-right">
-                  Phone
-                </Label>
-                <Input
-                  id="edit-phone"
-                  value={selectedLocation.phone}
-                  onChange={(e) => setSelectedLocation({ ...selectedLocation, phone: e.target.value })}
-                  className="col-span-3"
-                />
-              </div>
-
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-isWarehouse" className="text-right">
-                  Type
-                </Label>
-                <div className="col-span-3 flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="edit-isWarehouse"
-                    checked={selectedLocation.isWarehouse}
-                    onChange={(e) => setSelectedLocation({ ...selectedLocation, isWarehouse: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <Label htmlFor="edit-isWarehouse" className="text-sm font-normal">
-                    This is a warehouse location
-                  </Label>
+      {loading && locations.length === 0 ? (
+        <div className="text-muted-foreground py-8 text-center">Loading locations...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {locations.map((location) => (
+            <Card key={location.id} className={location.active ? "" : "opacity-60"}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-xl flex items-center">
+                  <MapPin className="h-5 w-5 mr-2 text-muted-foreground" />
+                  {location.name}
+                </CardTitle>
+                <CardDescription>
+                  {location.company_name || "Unassigned"}
+                  {!location.active ? " - Inactive" : ""}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 text-sm">
+                  <p className="text-muted-foreground">Address:</p>
+                  <p>{[location.address, location.city, location.state, location.zip].filter(Boolean).join(", ") || "No address on file"}</p>
                 </div>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditLocationOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditLocation}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
+                <div className="space-y-1 text-sm mt-2">
+                  <p className="text-muted-foreground">Batteries:</p>
+                  <p>{location.battery_count}
