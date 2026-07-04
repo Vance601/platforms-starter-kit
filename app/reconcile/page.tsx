@@ -27,10 +27,10 @@ type AgingBattery = {
   loaded_at: string | null;
   days_on_truck: number | null;
 };
-type Revenue = {
-  paid_sales: number;
+type CostSummary = {
+  sold_units: number;
   warranty_replacements: number;
-  paid_revenue: string;
+  total_cost: string;
 };
 type CoreAccountability = {
   owed: number;
@@ -45,7 +45,7 @@ type ReconcileData = {
   batteries?: Battery[];
   redFlags?: RedFlag[];
   agingOnTruck?: AgingBattery[];
-  revenue?: Revenue;
+  costSummary?: CostSummary;
   coreAccountability?: CoreAccountability;
 };
 
@@ -143,7 +143,7 @@ export default function ReconcilePage() {
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Battery Reconciliation</h1>
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">Loading...</p>
         ) : (
           <>
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -163,7 +163,7 @@ export default function ReconcilePage() {
   const batteries = data.batteries || [];
   const redFlags = data.redFlags || [];
   const aging = data.agingOnTruck || [];
-  const revenue = data.revenue;
+  const costSummary = data.costSummary;
   const coreAcct = data.coreAccountability;
 
   // How many aging units are in the red (14+ days)?
@@ -213,29 +213,29 @@ export default function ReconcilePage() {
         ))}
       </div>
 
-      {/* Revenue snapshot */}
-      {revenue ? (
+      {/* Cost snapshot: units sold and the wholesale cost paid for them (not income). */}
+      {costSummary ? (
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border px-4 py-3 text-center">
-            <p className="text-xl font-bold">{revenue.paid_sales}</p>
-            <p className="text-xs text-muted-foreground">Paid Sales</p>
+            <p className="text-xl font-bold">{costSummary.sold_units}</p>
+            <p className="text-xs text-muted-foreground">Sold Units</p>
           </div>
           <div className="rounded-lg border px-4 py-3 text-center">
-            <p className="text-xl font-bold">{revenue.warranty_replacements}</p>
+            <p className="text-xl font-bold">{costSummary.warranty_replacements}</p>
             <p className="text-xs text-muted-foreground">Warranties (free)</p>
           </div>
           <div className="rounded-lg border px-4 py-3 text-center">
-            <p className="text-xl font-bold">${revenue.paid_revenue}</p>
-            <p className="text-xs text-muted-foreground">Paid Revenue</p>
+            <p className="text-xl font-bold">${costSummary.total_cost}</p>
+            <p className="text-xs text-muted-foreground">Total Cost</p>
           </div>
         </div>
       ) : null}
 
-      {/* Core accountability - cores owed to MBS vs returned. Outstanding = money still owed back. */}
+      {/* Core accountability - cores owed to the supplier vs returned. Outstanding = money still owed back. */}
       {coreAcct ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Core Accountability - MBS</h2>
+            <h2 className="text-lg font-semibold">Core Accountability</h2>
             {coreAcct.outstanding > 0 ? (
               <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-medium text-red-700">
                 {coreAcct.outstanding} core{coreAcct.outstanding === 1 ? "" : "s"} not returned
@@ -247,12 +247,12 @@ export default function ReconcilePage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Each battery bought from MBS carries one core charge. Return the dead core to get credited. Outstanding cores are money still owed back to you.
+            Each battery bought from your supplier carries one core charge. Return the dead core to get credited. Outstanding cores are money still owed back to you.
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border px-4 py-3 text-center">
               <p className="text-xl font-bold">{coreAcct.owed}</p>
-              <p className="text-xs text-muted-foreground">Cores Owed to MBS</p>
+              <p className="text-xs text-muted-foreground">Cores Owed</p>
             </div>
             <div className="rounded-lg border px-4 py-3 text-center">
               <p className="text-xl font-bold">{coreAcct.returned}</p>
