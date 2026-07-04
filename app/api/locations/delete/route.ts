@@ -6,10 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // POST /api/locations/delete
-// Soft-deletes a location by marking it inactive. Owner/manager only.
-// We do NOT physically remove the row, because batteries, core counts, and
-// reconciliation reports reference locations. Setting active = false hides it
-// from pickers while preserving historical accuracy.
+// Soft-deletes a location (active = false), only if it belongs to the caller's
+// org. History is preserved because batteries, cores, and reports reference it.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -17,6 +15,9 @@ export async function POST(req: NextRequest) {
   }
   if (user.role !== "owner" && user.role !== "manager") {
     return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ success: false, error: "No organization context." }, { status: 403 });
   }
 
   let body: { id?: string };
@@ -32,18 +33,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Guard: if the location still has batteries tied to it, warn instead of
-    // silently hiding a location that active inventory depends on.
+    // Count batteries still tied to this location (informational, for the UI warning).
     const { rows: batteryRows } = await sql`
       SELECT COUNT(*)::int AS cnt FROM batteries WHERE location_id = ${id};
     `;
     const batteryCount = batteryRows[0]?.cnt ?? 0;
 
+    // Tenant guard: only soft-delete a location whose company is in the caller's org.
     const { rows } = await sql`
-      UPDATE locations
+      UPDATE locations AS l
       SET active = false
-      WHERE id = ${id}
-      RETURNING id, name;
+      FROM companies AS c
+      WHERE l.id = ${id}
+        AND c.id = l.company_id
+        AND c.org_id = ${user.orgId}
+      RETURNING l.id, l.name;
     `;
 
     if (rows.length === 0) {
