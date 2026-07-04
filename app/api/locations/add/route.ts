@@ -17,8 +17,8 @@ function slugify(input: string): string {
 }
 
 // POST /api/locations/add
-// Creates a new location under a company. Owner/manager only.
-// Required: name, companyId. Optional: address, city, state, zip.
+// Creates a new location under a company that belongs to the caller's org.
+// Owner/manager only. Required: name, companyId. Optional: address, city, state, zip.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -26,6 +26,9 @@ export async function POST(req: NextRequest) {
   }
   if (user.role !== "owner" && user.role !== "manager") {
     return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ success: false, error: "No organization context." }, { status: 403 });
   }
 
   let body: {
@@ -57,9 +60,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Confirm the company exists before attaching a location to it.
+    // Confirm the company exists AND belongs to the caller's org. This is the
+    // tenant boundary: you cannot attach a location to another org's company.
     const { rows: companyRows } = await sql`
-      SELECT id FROM companies WHERE id = ${companyId} LIMIT 1;
+      SELECT id FROM companies
+      WHERE id = ${companyId} AND org_id = ${user.orgId}
+      LIMIT 1;
     `;
     if (companyRows.length === 0) {
       return NextResponse.json({ success: false, error: "That company was not found." }, { status: 400 });
