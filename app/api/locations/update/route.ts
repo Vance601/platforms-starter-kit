@@ -6,9 +6,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // POST /api/locations/update
-// Updates an existing location's editable fields. Owner/manager only.
-// Only name, address, city, state, zip are editable here. Blank optional
-// fields are stored as NULL. This route does NOT touch the active flag.
+// Updates an existing location's editable fields, only if that location belongs
+// to the caller's org. Owner/manager only. Does NOT touch the active flag.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -16,6 +15,9 @@ export async function POST(req: NextRequest) {
   }
   if (user.role !== "owner" && user.role !== "manager") {
     return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ success: false, error: "No organization context." }, { status: 403 });
   }
 
   let body: {
@@ -47,15 +49,20 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Tenant guard: the UPDATE only matches a location whose company is in the
+    // caller's org. A location id from another org will match zero rows.
     const { rows } = await sql`
-      UPDATE locations
+      UPDATE locations AS l
       SET name = ${name},
           address = ${address},
           city = ${city},
           state = ${state},
           zip = ${zip}
-      WHERE id = ${id}
-      RETURNING id, name;
+      FROM companies AS c
+      WHERE l.id = ${id}
+        AND c.id = l.company_id
+        AND c.org_id = ${user.orgId}
+      RETURNING l.id, l.name;
     `;
 
     if (rows.length === 0) {
