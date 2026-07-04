@@ -84,18 +84,20 @@ export async function GET() {
       ORDER BY lm.occurred_at ASC NULLS FIRST;
     `;
 
-    // Revenue snapshot: paid sales vs free warranties.
-    const { rows: revenue } = await sql`
+    // Cost summary: this program tracks the wholesale COST paid for batteries,
+    // not selling-price income. total_cost is the sum of cost across sold, non-warranty
+    // units (warranty replacements are free, so they carry no cost here).
+    const { rows: costSummary } = await sql`
       SELECT
-        COUNT(*) FILTER (WHERE status = 'sold' AND is_warranty = false)::int AS paid_sales,
+        COUNT(*) FILTER (WHERE status = 'sold' AND is_warranty = false)::int AS sold_units,
         COUNT(*) FILTER (WHERE status = 'sold' AND is_warranty = true)::int AS warranty_replacements,
-        COALESCE(SUM(cost) FILTER (WHERE status = 'sold' AND is_warranty = false), 0) AS paid_revenue
+        COALESCE(SUM(cost) FILTER (WHERE status = 'sold' AND is_warranty = false), 0) AS total_cost
       FROM batteries;
     `;
 
     // Core accountability: REGULAR cores only (warranty cores are tracked separately
     // on the Warranty Report, so we exclude is_warranty = true here to avoid double-counting).
-    // Every regular battery bought from MBS (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
+    // Every regular battery bought from the supplier (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
     // A core is recovered when its battery is marked status = 'returned_core'.
     // Outstanding = owed - returned = regular cores not yet returned.
     const { rows: coreAccountability } = await sql`
@@ -115,7 +117,7 @@ export async function GET() {
       batteries,
       redFlags,
       agingOnTruck,
-      revenue: revenue[0],
+      costSummary: costSummary[0],
       coreAccountability: coreAccountability[0],
     });
   } catch (err: unknown) {
