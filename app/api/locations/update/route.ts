@@ -5,11 +5,10 @@ import { getCurrentUser } from "@/lib/current-user";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// POST /api/locations/delete
-// Soft-deletes a location by marking it inactive. Owner/manager only.
-// We do NOT physically remove the row, because batteries, core counts, and
-// reconciliation reports reference locations. Setting active = false hides it
-// from pickers while preserving historical accuracy.
+// POST /api/locations/update
+// Updates an existing location's editable fields. Owner/manager only.
+// Only name, address, city, state, zip are editable here. Blank optional
+// fields are stored as NULL. This route does NOT touch the active flag.
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -19,7 +18,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
   }
 
-  let body: { id?: string };
+  let body: {
+    id?: string;
+    name?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -27,21 +33,27 @@ export async function POST(req: NextRequest) {
   }
 
   const id = (body.id || "").trim();
+  const name = (body.name || "").trim();
+  const address = (body.address || "").trim() || null;
+  const city = (body.city || "").trim() || null;
+  const state = (body.state || "").trim() || null;
+  const zip = (body.zip || "").trim() || null;
+
   if (!id) {
     return NextResponse.json({ success: false, error: "Location id is required." }, { status: 400 });
   }
+  if (!name) {
+    return NextResponse.json({ success: false, error: "Location name is required." }, { status: 400 });
+  }
 
   try {
-    // Guard: if the location still has batteries tied to it, warn instead of
-    // silently hiding a location that active inventory depends on.
-    const { rows: batteryRows } = await sql`
-      SELECT COUNT(*)::int AS cnt FROM batteries WHERE location_id = ${id};
-    `;
-    const batteryCount = batteryRows[0]?.cnt ?? 0;
-
     const { rows } = await sql`
       UPDATE locations
-      SET active = false
+      SET name = ${name},
+          address = ${address},
+          city = ${city},
+          state = ${state},
+          zip = ${zip}
       WHERE id = ${id}
       RETURNING id, name;
     `;
@@ -50,12 +62,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Location not found." }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
-      id: rows[0].id,
-      name: rows[0].name,
-      batteryCount,
-    });
+    return NextResponse.json({ success: true, id: rows[0].id, name: rows[0].name });
   } catch (err: unknown) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : "Unknown error" },
