@@ -36,6 +36,8 @@ type FormData = {
   owedByModel?: OwedRow[];
 };
 
+type Supplier = { id: string; name: string };
+
 type ClearResult = {
   modelCode: string;
   requested: number;
@@ -55,6 +57,7 @@ export default function CoreAccountabilityPage() {
 
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [form, setForm] = useState<FormData | null>(null);
+  const [supplierName, setSupplierName] = useState("your supplier");
 
   // Invoice form state
   const [companyId, setCompanyId] = useState("");
@@ -77,6 +80,17 @@ export default function CoreAccountabilityPage() {
       // Form data (cores owed by model, locations)
       const formRes = await fetch("/api/core-returns", { cache: "no-store" });
       const formJson: FormData = await formRes.json();
+
+      // Suppliers (for display naming)
+      try {
+        const supRes = await fetch("/api/suppliers", { cache: "no-store" });
+        const supJson: { success: boolean; suppliers?: Supplier[] } = await supRes.json();
+        if (supJson.success && supJson.suppliers && supJson.suppliers.length > 0) {
+          setSupplierName(supJson.suppliers[0].name);
+        }
+      } catch {
+        // fall back to default label
+      }
 
       if (!formJson.success) {
         setError(formJson.error || "Could not load.");
@@ -180,7 +194,7 @@ export default function CoreAccountabilityPage() {
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Core Accountability</h1>
         {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <p className="text-sm text-gray-500">Loading...</p>
         ) : (
           <>
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -202,7 +216,7 @@ export default function CoreAccountabilityPage() {
     <div className="mx-auto max-w-4xl py-2">
       <h1 className="text-2xl font-bold text-gray-900">Core Accountability</h1>
       <p className="mt-1 text-sm text-gray-500">
-        Every sale owes a core back to the warehouse. Record an MBS invoice to clear
+        Every sale owes a core back to the warehouse. Record a {supplierName} invoice to clear
         returned cores. Customer-kept cores are not counted as missing.
       </p>
 
@@ -218,7 +232,7 @@ export default function CoreAccountabilityPage() {
           <h2 className="text-lg font-semibold text-gray-900">Summary</h2>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Card label="Owed" value={report.summary.owed} accent="text-red-600" hint="Not turned in" />
-            <Card label="Returned" value={report.summary.returned} accent="text-green-600" hint="Sent to MBS" />
+            <Card label="Returned" value={report.summary.returned} accent="text-green-600" hint={`Sent to ${supplierName}`} />
             <Card label="Customer kept" value={report.summary.customer_kept} accent="text-gray-600" hint="No core exists" />
             <Card label="Total" value={report.summary.total} accent="text-gray-900" hint="All records" />
           </div>
@@ -261,11 +275,11 @@ export default function CoreAccountabilityPage() {
         </section>
       )}
 
-      {/* Enter MBS Core Invoice */}
+      {/* Enter Core Invoice */}
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-gray-900">Enter MBS Core Invoice</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Enter {supplierName} Core Invoice</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Record cores returned to MBS. Each line clears the oldest owed cores of that
+          Record cores returned to {supplierName}. Each line clears the oldest owed cores of that
           model. Use one invoice per company/location.
         </p>
 
@@ -297,7 +311,7 @@ export default function CoreAccountabilityPage() {
               </p>
             ) : locations.length === 1 ? (
               <p className="mt-1 text-sm text-gray-700">
-                {companyId.slice(0, 8)}… / {locationId.slice(0, 8)}… (only location)
+                {companyId.slice(0, 8)}... / {locationId.slice(0, 8)}... (only location)
               </p>
             ) : (
               <select
@@ -309,13 +323,13 @@ export default function CoreAccountabilityPage() {
                 }}
                 className="mt-1 w-full rounded border px-3 py-2 text-sm"
               >
-                <option value="::">Select…</option>
+                <option value="::">Select...</option>
                 {locations.map((loc) => (
                   <option
                     key={`${loc.company_id}::${loc.location_id}`}
                     value={`${loc.company_id}::${loc.location_id}`}
                   >
-                    {loc.company_id.slice(0, 8)}… / {loc.location_id.slice(0, 8)}…
+                    {loc.company_id.slice(0, 8)}... / {loc.location_id.slice(0, 8)}...
                   </option>
                 ))}
               </select>
@@ -380,7 +394,7 @@ export default function CoreAccountabilityPage() {
                 : "bg-blue-600 text-white")
             }
           >
-            {submitting ? "Clearing…" : "Clear cores"}
+            {submitting ? "Clearing..." : "Clear cores"}
           </button>
         </div>
       </section>
