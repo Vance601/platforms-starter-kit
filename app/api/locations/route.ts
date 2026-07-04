@@ -6,8 +6,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // GET /api/locations
-// Returns all companies (for the add-location dropdown) and all locations
-// with their company name and live battery count. Owner/manager only.
+// Returns companies (for the add-location dropdown) and locations with their
+// company name and live battery count -- SCOPED to the caller's organization.
+// Tenancy chain: organizations -> companies (org_id) -> locations (company_id).
+// Fail-closed: if the caller has no orgId, return nothing rather than leak.
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -17,11 +19,16 @@ export async function GET() {
     if (user.role !== "owner" && user.role !== "manager") {
       return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
     }
+    if (!user.orgId) {
+      // No tenant context -- return empty rather than expose other orgs' data.
+      return NextResponse.json({ success: true, companies: [], locations: [] });
+    }
 
     const companies = await sql`
       SELECT id, name, slug, active
       FROM companies
       WHERE active = true
+        AND org_id = ${user.orgId}
       ORDER BY name;
     `;
 
@@ -39,12 +46,13 @@ export async function GET() {
         l.active,
         COALESCE(b.cnt, 0)::int AS battery_count
       FROM locations l
-      LEFT JOIN companies c ON c.id = l.company_id
+      JOIN companies c ON c.id = l.company_id
       LEFT JOIN (
         SELECT location_id, count(*) AS cnt
         FROM batteries
         GROUP BY location_id
       ) b ON b.location_id = l.id
+      WHERE c.org_id = ${user.orgId}
       ORDER BY c.name, l.name;
     `;
 
