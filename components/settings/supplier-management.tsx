@@ -69,8 +69,8 @@ export function SupplierManagement() {
       <div>
         <p className="text-sm text-muted-foreground">
           These are the suppliers your cores and warranties go back to. Add each
-          distributor you buy batteries from. You will pick one when recording a
-          warranty pickup or core return.
+          distributor you buy batteries from. You pick one when recording a
+          warranty pickup or a core return.
         </p>
       </div>
 
@@ -93,4 +93,32 @@ export function SupplierManagement() {
           disabled={saving}
           className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
-          {saving ? "Adding..." : "Add
+          {saving ? "Adding..." : "Add supplier"}
+        </button>
+      </div>
+
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      <div className="rounded-md border border-gray-200">
+        <div className="border-b bg-gray-50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+          Your suppliers
+        </div>
+        {loading ? (
+          <div className="px-4 py-6 text-sm text-gray-500">Loading...</div>
+        ) : suppliers.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-gray-500">
+            No suppliers yet. Add your first one above.
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {suppliers.map((s) => (
+              <li key={s.id} className="px-4 py-3 text-sm font-medium text-gray-900">
+                {s.name}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
