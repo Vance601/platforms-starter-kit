@@ -1,85 +1,106 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Build a URL-safe slug from a name, e.g. "Tucson Main" -> "tucson-main"
+// Turn a location name into a URL-safe slug (lowercase, hyphens, no symbols).
 function slugify(input: string): string {
   return input
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
 }
 
 // POST /api/locations/add
-// Body: { name, companyId, address?, city?, state?, zip? }
-// Inserts a new location scoped to the chosen company. Owner/manager only.
-export async function POST(req: Request) {
+// Creates a new location under a company. Owner/manager only.
+// Required: name, companyId. Optional: address, city, state, zip.
+export async function POST(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+
+  let body: {
+    name?: string;
+    companyId?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  };
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
-    }
-    const role = (session.user as { role?: string }).role;
-    if (role !== "owner" && role !== "manager") {
-      return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
-    }
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ success: false, error: "Invalid JSON body." }, { status: 400 });
+  }
 
-    const body = await req.json().catch(() => ({}));
-    const name = (body.name || "").toString().trim();
-    const companyId = (body.companyId || "").toString().trim();
-    const address = body.address ? body.address.toString().trim() : null;
-    const city = body.city ? body.city.toString().trim() : null;
-    const state = body.state ? body.state.toString().trim() : null;
-    const zip = body.zip ? body.zip.toString().trim() : null;
+  const name = (body.name || "").trim();
+  const companyId = (body.companyId || "").trim();
+  const address = (body.address || "").trim() || null;
+  const city = (body.city || "").trim() || null;
+  const state = (body.state || "").trim() || null;
+  const zip = (body.zip || "").trim() || null;
 
-    if (!name) {
-      return NextResponse.json({ success: false, error: "Location name is required." }, { status: 400 });
-    }
-    if (!companyId) {
-      return NextResponse.json({ success: false, error: "Please choose a company." }, { status: 400 });
-    }
+  if (!name) {
+    return NextResponse.json({ success: false, error: "Location name is required." }, { status: 400 });
+  }
+  if (!companyId) {
+    return NextResponse.json({ success: false, error: "Please choose a company." }, { status: 400 });
+  }
 
-    // Verify the company exists and is active.
-    const company = await sql`SELECT id FROM companies WHERE id = ${companyId} AND active = true LIMIT 1;`;
-    if (company.rows.length === 0) {
+  try {
+    // Confirm the company exists before attaching a location to it.
+    const { rows: companyRows } = await sql`
+      SELECT id FROM companies WHERE id = ${companyId} LIMIT 1;
+    `;
+    if (companyRows.length === 0) {
       return NextResponse.json({ success: false, error: "That company was not found." }, { status: 400 });
     }
 
-    // No duplicate location name within the same company.
-    const dup = await sql`
+    // Build a unique slug within this company (locations are scoped per company).
+    const baseSlug = slugify(name) || "location";
+    let slug = baseSlug;
+    let suffix = 1;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { rows: existing } = await sql`
+        SELECT id FROM locations
+        WHERE company_id = ${companyId} AND slug = ${slug}
+        LIMIT 1;
+      `;
+      if (existing.length === 0) break;
+      suffix += 1;
+      slug = `${baseSlug}-${suffix}`;
+    }
+
+    // Block an exact duplicate location name within the same company.
+    const { rows: dupName } = await sql`
       SELECT id FROM locations
       WHERE company_id = ${companyId} AND lower(name) = ${name.toLowerCase()}
       LIMIT 1;
     `;
-    if (dup.rows.length > 0) {
+    if (dupName.length > 0) {
       return NextResponse.json(
-        { success: false, error: "A location with that name already exists for this company." },
+        { success: false, error: "That location already exists for this company." },
         { status: 409 }
       );
     }
 
     const id = crypto.randomUUID();
-    let slug = slugify(name);
-    if (!slug) slug = id.slice(0, 8);
-
-    // Keep slug unique within the company by suffixing if needed.
-    const slugClash = await sql`
-      SELECT id FROM locations WHERE company_id = ${companyId} AND slug = ${slug} LIMIT 1;
-    `;
-    if (slugClash.rows.length > 0) {
-      slug = `${slug}-${id.slice(0, 4)}`;
-    }
-
     await sql`
-      INSERT INTO locations (id, company_id, slug, name, address, city, state, zip, active)
-      VALUES (${id}, ${companyId}, ${slug}, ${name}, ${address}, ${city}, ${state}, ${zip}, true);
+      INSERT INTO locations (id, company_id, slug, name, address, city, state, zip)
+      VALUES (${id}, ${companyId}, ${slug}, ${name}, ${address}, ${city}, ${state}, ${zip});
     `;
 
-    return NextResponse.json({ success: true, id, name, slug, companyId });
+    return NextResponse.json({ success: true, id, name });
   } catch (err: unknown) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : "Unknown error" },
