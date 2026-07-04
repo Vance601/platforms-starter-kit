@@ -9,6 +9,8 @@ type Location = {
   companyName: string;
 };
 
+type Supplier = { id: string; name: string };
+
 type Pickup = {
   id: string;
   memo_number: string;
@@ -77,6 +79,7 @@ async function fileToScaledBase64(
 
 export default function WarrantyPage() {
   const [locations, setLocations] = useState<Location[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const [tab, setTab] = useState<"pickup" | "memo">("pickup");
 
@@ -84,6 +87,10 @@ export default function WarrantyPage() {
     fetch("/api/receive-order/options")
       .then((r) => r.json())
       .then((data) => setLocations(data.locations || []))
+      .catch(() => {});
+    fetch("/api/suppliers", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => setSuppliers(data.suppliers || []))
       .catch(() => {});
     loadPickups();
   }, []);
@@ -98,11 +105,11 @@ export default function WarrantyPage() {
   return (
     <div style={{ padding: "24px", maxWidth: "900px", margin: "0 auto", fontFamily: "system-ui, sans-serif" }}>
       <Link href="/" style={{ display: "inline-block", marginBottom: 12, color: "#2563eb", textDecoration: "none", fontSize: 14 }}>
-        ← Back to Dashboard
+        Back to Dashboard
       </Link>
       <h1 style={{ marginBottom: 4 }}>Warranties</h1>
       <p style={{ color: "#666", marginTop: 0, fontSize: 14 }}>
-        Record warranties sent back to MBS, then apply the MBS credit memo. Warranty cores should net to $0 — if MBS charged a core, it gets flagged. Inventory is never affected.
+        Record warranties sent back to your supplier, then apply the supplier credit memo. Warranty cores should net to $0 - if the supplier charged a core, it gets flagged. Inventory is never affected.
       </p>
 
       <div style={{ display: "flex", gap: 8, margin: "16px 0", borderBottom: "1px solid #ddd" }}>
@@ -112,12 +119,12 @@ export default function WarrantyPage() {
         </button>
         <button onClick={() => setTab("memo")}
           style={{ padding: "10px 18px", border: "none", borderBottom: tab === "memo" ? "3px solid #0066cc" : "3px solid transparent", background: "none", cursor: "pointer", fontWeight: tab === "memo" ? 700 : 400 }}>
-          2. MBS Credit Memo
+          2. Supplier Credit Memo
         </button>
       </div>
 
       {tab === "pickup" ? (
-        <PickupForm locations={locations} onDone={loadPickups} />
+        <PickupForm locations={locations} suppliers={suppliers} onDone={loadPickups} />
       ) : (
         <MemoForm locations={locations} pickups={pickups} />
       )}
@@ -125,9 +132,9 @@ export default function WarrantyPage() {
   );
 }
 
-function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () => void }) {
+function PickupForm({ locations, suppliers, onDone }: { locations: Location[]; suppliers: Supplier[]; onDone: () => void }) {
   const [locationId, setLocationId] = useState("");
-  const [supplier, setSupplier] = useState("Continental Battery Systems");
+  const [supplier, setSupplier] = useState("");
   const [memoNumber, setMemoNumber] = useState("");
   const [pickupDate, setPickupDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
@@ -138,8 +145,14 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+  // Pre-select the first supplier once the list loads (if nothing chosen yet).
+  useEffect(() => {
+    if (!supplier && suppliers.length > 0) {
+      setSupplier(suppliers[0].name);
+    }
+  }, [suppliers, supplier]);
+
   const totalUnits = lines.reduce((s, l) => s + (Number(l.units) || 0), 0);
-  // A line is valid if it has ANY non-empty code (stock OR typed). Only empty codes are "needs a code".
   const needsCode = lines.filter((l) => l.units > 0 && l.model_code.trim() === "").length;
 
   async function scanMemo() {
@@ -188,15 +201,15 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
         setMsg(
           `Read ${scanned.length} line(s). ${
             missing > 0
-              ? `${missing} couldn't be auto-matched — for the yellow rows, pick a stock code OR choose "+ Other" to type the code from the memo.`
-              : "All matched — review against the paper, then Save."
+              ? `${missing} could not be auto-matched - for the yellow rows, pick a stock code OR choose "+ Other" to type the code from the memo.`
+              : "All matched - review against the paper, then Save."
           }`
         );
       } else {
         setErr("No warranty lines were read. Enter them by hand below.");
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Scan failed — enter lines by hand.");
+      setErr(e instanceof Error ? e.message : "Scan failed - enter lines by hand.");
     } finally {
       setScanning(false);
     }
@@ -224,6 +237,10 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
     setMsg("");
     if (!locationId || !memoNumber) {
       setErr("Location and memo number are required.");
+      return;
+    }
+    if (!supplier.trim()) {
+      setErr("Pick a supplier.");
       return;
     }
     if (needsCode > 0) {
@@ -263,7 +280,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || "Failed to save pickup");
-      setMsg(`Warranty pickup ${data.memoNumber} saved — ${data.totalUnits} units sent back. No inventory change.`);
+      setMsg(`Warranty pickup ${data.memoNumber} saved - ${data.totalUnits} units sent back. No inventory change.`);
       setMemoNumber("");
       setNotes("");
       setLines([{ model_code: "", raw_description: "", units: 1, other: false }]);
@@ -291,14 +308,22 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
             style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }} />
         </label>
         <label>Supplier
-          <input type="text" value={supplier} onChange={(e) => setSupplier(e.target.value)}
-            style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }} />
+          {suppliers.length > 0 ? (
+            <select value={supplier} onChange={(e) => setSupplier(e.target.value)}
+              style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }}>
+              {suppliers.map((s) => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+          ) : (
+            <input type="text" value={supplier} onChange={(e) => setSupplier(e.target.value)}
+              placeholder="Add suppliers in Settings"
+              style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }} />
+          )}
         </label>
         <label>Location
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
             style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }}>
             <option value="">-- Select location --</option>
-            {locations.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.name}</option>)}
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.companyName} - {l.name}</option>)}
           </select>
         </label>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -323,7 +348,7 @@ function PickupForm({ locations, onDone }: { locations: Location[]; onDone: () =
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ margin: 0 }}>
           Warranties sent back ({totalUnits})
-          {needsCode > 0 && <span style={{ color: "#c00", fontSize: 14, fontWeight: 400 }}> — {needsCode} need a code</span>}
+          {needsCode > 0 && <span style={{ color: "#c00", fontSize: 14, fontWeight: 400 }}> - {needsCode} need a code</span>}
         </h3>
         <button onClick={addLine} style={{ background: "#eee", border: "none", borderRadius: 4, padding: "6px 12px", cursor: "pointer" }}>+ Add line</button>
       </div>
@@ -465,7 +490,7 @@ function MemoForm({ locations, pickups }: { locations: Location[]; pickups: Pick
       {err && <div style={{ background: "#fee", border: "1px solid #c00", padding: 12, borderRadius: 4 }}>{err}</div>}
       {result && (
         <div style={{ background: result.flagged ? "#fff4f4" : "#f0fff4", border: "1px solid " + (result.flagged ? "#c00" : "#0a0"), padding: 14, borderRadius: 6 }}>
-          <strong style={{ color: result.flagged ? "#c00" : "#0a0" }}>{result.flagged ? "⚠ FLAGGED" : "✓ Clean"}</strong>
+          <strong style={{ color: result.flagged ? "#c00" : "#0a0" }}>{result.flagged ? "FLAGGED" : "Clean"}</strong>
           <div style={{ marginTop: 4 }}>{result.message}</div>
         </div>
       )}
@@ -483,7 +508,7 @@ function MemoForm({ locations, pickups }: { locations: Location[]; pickups: Pick
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
             style={{ display: "block", width: "100%", padding: 8, marginTop: 4 }}>
             <option value="">-- Select location --</option>
-            {locations.map((l) => <option key={l.id} value={l.id}>{l.companyName} — {l.name}</option>)}
+            {locations.map((l) => <option key={l.id} value={l.id}>{l.companyName} - {l.name}</option>)}
           </select>
         </label>
         <label>Link to Warranty Pickup (optional)
@@ -509,8 +534,8 @@ function MemoForm({ locations, pickups }: { locations: Location[]; pickups: Pick
         <div style={{ gridColumn: "1 / -1", background: willFlag ? "#fff4f4" : "#f0fff4", border: "1px solid " + (willFlag ? "#f3c0c0" : "#bfe6c9"), borderRadius: 6, padding: "10px 12px" }}>
           <strong>Warranty core net: {net}</strong>
           <span style={{ color: "#666", fontSize: 13 }}>
-            {" "}(charged {charged} − credited {credited}). Warranty cores should net to <strong>0</strong>.
-            {willFlag ? " This will be FLAGGED — MBS charged for cores that should be free." : " Looks correct."}
+            {" "}(charged {charged} minus credited {credited}). Warranty cores should net to <strong>0</strong>.
+            {willFlag ? " This will be FLAGGED - the supplier charged for cores that should be free." : " Looks correct."}
           </span>
         </div>
         <label style={{ gridColumn: "1 / -1" }}>Credit memo file (optional)
