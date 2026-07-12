@@ -1,6 +1,6 @@
 // app/api/core-reconcile/route.ts
 // READ-ONLY per-driver core reconciliation.
-// Signed-in users only.
+// Owner/manager only, scoped to the caller's organization.
 // Driver attribution = battery_movements.driver_id (drivers table).
 //
 // RULE: REGULAR sales owe a core back to the warehouse, tracked in core_returns.
@@ -10,15 +10,25 @@
 
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET() {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({
+      success: true,
+      drivers: [],
+      totals: { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, still_owes: 0 },
+    });
   }
 
   try {
@@ -29,9 +39,10 @@ export async function GET() {
           bm.driver_id AS driver_id,
           COALESCE(b.is_warranty, false) AS is_warranty
         FROM battery_movements bm
-        LEFT JOIN batteries b ON b.id = bm.battery_id
+        JOIN batteries b ON b.id = bm.battery_id
         WHERE bm.to_status = 'sold'
           AND bm.driver_id IS NOT NULL
+          AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ),
       turned_in AS (
         -- cores returned for REGULAR sales only (warranty returns live elsewhere)
