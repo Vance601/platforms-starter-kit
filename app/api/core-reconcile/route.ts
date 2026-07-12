@@ -1,12 +1,6 @@
 // app/api/core-reconcile/route.ts
 // READ-ONLY per-driver core reconciliation.
 // Owner/manager only, scoped to the caller's organization.
-// Driver attribution = battery_movements.driver_id (drivers table).
-//
-// RULE: REGULAR sales owe a core back to the warehouse, tracked in core_returns.
-// WARRANTY replacements owe their core through the separate warranty-return system,
-// so they are shown for visibility but NOT counted in this "still owes" figure.
-//   still_owes = regular_sales - regular_cores_turned_in
 
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
@@ -45,7 +39,6 @@ export async function GET() {
           AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ),
       turned_in AS (
-        -- cores returned for REGULAR sales only (warranty returns live elsewhere)
         SELECT
           sm.driver_id,
           COUNT(*) FILTER (WHERE cr.status = 'returned')::int AS cores_returned
