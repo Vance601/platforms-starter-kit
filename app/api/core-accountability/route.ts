@@ -1,16 +1,26 @@
 // app/api/core-accountability/route.ts
 // READ-ONLY. Driver attribution = battery_movements.driver_id (drivers table).
+// Owner/manager only, scoped to the caller's organization.
 
 import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
-import { isSignedIn } from '@/lib/current-user';
+import { getCurrentUser } from '@/lib/current-user';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
+  }
+  if (user.role !== 'owner' && user.role !== 'manager') {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({
+      outstanding: [],
+      summary: { owed: 0, returned: 0, customer_kept: 0, other: 0, total: 0 },
+    });
   }
 
   try {
@@ -26,6 +36,7 @@ export async function GET() {
         ON bm.battery_id = cr.battery_id AND bm.to_status = 'sold'
       LEFT JOIN drivers d          ON d.id = bm.driver_id
       WHERE cr.status = 'owed'
+        AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY d.name, mdl.code
       ORDER BY cores_owed DESC, driver_name ASC;
     `;
@@ -33,6 +44,7 @@ export async function GET() {
     const { rows: summaryRows } = await sql`
       SELECT status, COUNT(*)::int AS n
       FROM core_returns
+      WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY status;
     `;
 
