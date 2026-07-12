@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 type Delivery = {
@@ -27,9 +27,7 @@ function fmtDate(d: string | null): string {
 }
 
 export default function PrintLabelsPage() {
-  const [pw, setPw] = useState("");
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -38,26 +36,27 @@ export default function PrintLabelsPage() {
   const [labelsLoading, setLabelsLoading] = useState(false);
 
   async function loadDeliveries() {
-    if (!pw.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/print-labels?pw=${encodeURIComponent(pw.trim())}`, {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/print-labels", { cache: "no-store" });
       const json = await res.json();
       if (!json.success) {
         setError(json.error || "Could not load deliveries.");
         return;
       }
       setDeliveries(json.deliveries || []);
-      setLoaded(true);
     } catch {
       setError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    loadDeliveries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadLabels(deliveryId: string) {
     setSelectedId(deliveryId);
@@ -67,7 +66,7 @@ export default function PrintLabelsPage() {
     setError(null);
     try {
       const res = await fetch(
-        `/api/print-labels?pw=${encodeURIComponent(pw.trim())}&deliveryId=${encodeURIComponent(deliveryId)}`,
+        `/api/print-labels?deliveryId=${encodeURIComponent(deliveryId)}`,
         { cache: "no-store" }
       );
       const json = await res.json();
@@ -83,36 +82,11 @@ export default function PrintLabelsPage() {
     }
   }
 
-  if (!loaded) {
+  if (loading) {
     return (
       <div className="max-w-md space-y-4 py-6">
         <h1 className="text-2xl font-bold">Print Battery Labels</h1>
-        <p className="text-sm text-gray-500">
-          Owner access required. Enter the admin password to print QR labels.
-        </p>
-        <input
-          type="password"
-          value={pw}
-          onChange={(e) => setPw(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") loadDeliveries();
-          }}
-          placeholder="Admin password"
-          className="w-full rounded-lg border px-4 py-3"
-        />
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          onClick={loadDeliveries}
-          disabled={!pw.trim() || loading}
-          className={
-            "rounded-lg px-4 py-2 font-medium " +
-            (!pw.trim() || loading
-              ? "cursor-not-allowed bg-slate-200 text-slate-400"
-              : "bg-blue-600 text-white")
-          }
-        >
-          {loading ? "Loading…" : "View"}
-        </button>
+        <p className="text-sm text-gray-500">Loading deliveries...</p>
       </div>
     );
   }
@@ -122,7 +96,7 @@ export default function PrintLabelsPage() {
       <div className="print:hidden mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold text-gray-900">Print Battery Labels</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Pick a delivery, then print QR labels (2&quot; × 1&quot;) for every battery in it.
+          Pick a delivery, then print QR labels (2&quot; x 1&quot;) for every battery in it.
         </p>
 
         {error ? (
@@ -140,11 +114,11 @@ export default function PrintLabelsPage() {
             onChange={(e) => loadLabels(e.target.value)}
             className="mt-1 w-full rounded border px-3 py-2 text-sm"
           >
-            <option value="">Select a delivery…</option>
+            <option value="">Select a delivery...</option>
             {deliveries.map((d) => (
               <option key={d.id} value={d.id}>
-                {(d.supplier || "Unknown supplier")} — {fmtDate(d.receipt_date)}
-                {d.receipt_number ? ` · #${d.receipt_number}` : ""} · {d.battery_count} batteries
+                {(d.supplier || "Unknown supplier")} - {fmtDate(d.receipt_date)}
+                {d.receipt_number ? ` - #${d.receipt_number}` : ""} - {d.battery_count} batteries
               </option>
             ))}
           </select>
@@ -159,12 +133,12 @@ export default function PrintLabelsPage() {
               Print {labels.length} labels
             </button>
             <span className="text-sm text-gray-500">
-              Set your printer to the 2&quot; × 1&quot; label size, margins off.
+              Set your printer to the 2&quot; x 1&quot; label size, margins off.
             </span>
           </div>
         ) : null}
 
-        {labelsLoading ? <p className="mt-4 text-sm text-gray-500">Loading batteries…</p> : null}
+        {labelsLoading ? <p className="mt-4 text-sm text-gray-500">Loading batteries...</p> : null}
         {!labelsLoading && selectedId && labels.length === 0 ? (
           <p className="mt-4 text-sm text-gray-500">No batteries found in this delivery.</p>
         ) : null}
