@@ -1,24 +1,37 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function GET() {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
-    return NextResponse.json(
-      { success: false, error: "Not signed in." },
-      { status: 401 }
-    );
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    // Fail-closed: no tenant context returns empty rather than leaking all orgs.
+    return NextResponse.json({
+      success: true,
+      statusCounts: [],
+      batteries: [],
+      redFlags: [],
+      agingOnTruck: [],
+      costSummary: { sold_units: 0, warranty_replacements: 0, total_cost: 0 },
+      coreAccountability: { owed: 0, returned: 0, outstanding: 0 },
+    });
   }
 
   try {
-    // Status counts across all batteries.
+    // Status counts across this org's batteries.
     const { rows: statusCounts } = await sql`
       SELECT status::text AS status, COUNT(*)::int AS count
       FROM batteries
+      WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY status
       ORDER BY status;
     `;
@@ -41,6 +54,7 @@ export async function GET() {
       FROM batteries b
       LEFT JOIN trucks t ON t.id = b.truck_id
       LEFT JOIN batteries fb ON fb.id = b.warranty_replaces_battery_id
+      WHERE b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY b.barcode;
     `;
 
@@ -51,6 +65,7 @@ export async function GET() {
       SELECT id, barcode, status::text AS status
       FROM batteries
       WHERE status = 'missing'
+        AND company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY barcode;
     `;
 
@@ -81,6 +96,7 @@ export async function GET() {
       ) lm ON true
       LEFT JOIN drivers loader ON loader.id = lm.driver_id
       WHERE b.status = 'on_truck'
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY lm.occurred_at ASC NULLS FIRST;
     `;
 
@@ -92,7 +108,8 @@ export async function GET() {
         COUNT(*) FILTER (WHERE status = 'sold' AND is_warranty = false)::int AS sold_units,
         COUNT(*) FILTER (WHERE status = 'sold' AND is_warranty = true)::int AS warranty_replacements,
         COALESCE(SUM(cost) FILTER (WHERE status = 'sold' AND is_warranty = false), 0) AS total_cost
-      FROM batteries;
+      FROM batteries
+      WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId});
     `;
 
     // Core accountability: REGULAR cores only (warranty cores are tracked separately
@@ -108,7 +125,8 @@ export async function GET() {
           COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL AND is_warranty = false)
           - COUNT(*) FILTER (WHERE status = 'returned_core' AND is_warranty = false)
         )::int AS outstanding
-      FROM batteries;
+      FROM batteries
+      WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId});
     `;
 
     return NextResponse.json({
@@ -122,10 +140,7 @@ export async function GET() {
     });
   } catch (err: unknown) {
     return NextResponse.json(
-      {
-        success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      },
+      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
       { status: 500 }
     );
   }
