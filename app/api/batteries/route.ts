@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+  if (!user.orgId) {
+    // Fail-closed: no tenant context returns empty rather than leaking all orgs.
+    return NextResponse.json({ batteries: [], byLocation: [], byClassification: [] });
   }
 
   try {
@@ -32,6 +39,7 @@ export async function GET() {
       JOIN locations ON locations.id = batteries.location_id
       JOIN companies ON companies.id = batteries.company_id
       LEFT JOIN mbs_invoices ON mbs_invoices.id = batteries.mbs_invoice_id
+      WHERE companies.org_id = ${user.orgId}
       ORDER BY batteries.received_at DESC, batteries.created_at DESC;
     `;
 
@@ -47,6 +55,7 @@ export async function GET() {
       LEFT JOIN batteries ON batteries.location_id = locations.id
         AND batteries.status = 'in_warehouse'
       WHERE locations.active = TRUE
+        AND companies.org_id = ${user.orgId}
       GROUP BY locations.id, locations.name, locations.slug, companies.name
       ORDER BY companies.name, locations.name;
     `;
@@ -58,6 +67,9 @@ export async function GET() {
       FROM battery_types
       LEFT JOIN batteries ON batteries.battery_type_id = battery_types.id
         AND batteries.status = 'in_warehouse'
+        AND batteries.company_id IN (
+          SELECT id FROM companies WHERE org_id = ${user.orgId}
+        )
       GROUP BY battery_types.code
       ORDER BY battery_types.code;
     `;
