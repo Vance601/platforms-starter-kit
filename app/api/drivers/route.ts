@@ -18,7 +18,6 @@ export async function GET() {
       return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
     }
     if (!user.orgId) {
-      // Fail-closed: no tenant context returns empty rather than leaking all orgs.
       return NextResponse.json({ success: true, drivers: [] });
     }
 
