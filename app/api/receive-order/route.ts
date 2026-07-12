@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 import { generateNextBarcode } from "@/lib/barcode";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
+// Every action writes inventory/receipts tied to a location or invoice. We
+// resolve the caller via getCurrentUser() (works for both GitHub and manager
+// sessions) and, before any write, confirm the target location/invoice/receipt
+// belongs to the caller's org. A resource from another org matches nothing.
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ error: "No organization context" }, { status: 403 });
   }
 
   const body = await req.json();
@@ -25,8 +36,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: location must belong to the caller's org.
       const { rows: locations } = await sql`
-        SELECT company_id FROM locations WHERE id = ${locationId};
+        SELECT l.company_id
+        FROM locations l
+        JOIN companies c ON c.id = l.company_id
+        WHERE l.id = ${locationId} AND c.org_id = ${user.orgId};
       `;
       if (locations.length === 0) {
         return NextResponse.json({ error: "Location not found" }, { status: 404 });
@@ -43,7 +58,7 @@ export async function POST(req: NextRequest) {
         VALUES
           (${invoiceId}, ${invoiceNumber}, ${companyId}, ${locationId},
            ${parsedDate.toISOString()}, ${totalAmount}, ${batteryCount},
-           'pending_verification', ${session.user.id}, NOW());
+           'pending_verification', ${user.userId}, NOW());
       `;
 
       return NextResponse.json({
@@ -64,12 +79,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: invoice must belong to the caller's org.
       const { rows: invoices } = await sql`
         SELECT mbs_invoices.id, mbs_invoices.company_id, mbs_invoices.location_id,
                companies.slug AS company_slug
         FROM mbs_invoices
         JOIN companies ON companies.id = mbs_invoices.company_id
-        WHERE mbs_invoices.id = ${invoiceId};
+        WHERE mbs_invoices.id = ${invoiceId} AND companies.org_id = ${user.orgId};
       `;
       if (invoices.length === 0) {
         return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
@@ -110,7 +126,7 @@ export async function POST(req: NextRequest) {
            occurred_at, recorded_by_id, notes)
         VALUES
           (${crypto.randomUUID()}, ${batteryId}, NULL, 'in_warehouse',
-           ${invoice.location_id}, NOW(), ${session.user.id},
+           ${invoice.location_id}, NOW(), ${user.userId},
            ${`Received on MBS invoice ${invoiceId}`});
       `;
 
@@ -133,8 +149,12 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Missing invoiceId" }, { status: 400 });
       }
 
+      // Tenant guard: invoice must belong to the caller's org.
       const { rows: invoices } = await sql`
-        SELECT battery_count FROM mbs_invoices WHERE id = ${invoiceId};
+        SELECT mbs_invoices.battery_count
+        FROM mbs_invoices
+        JOIN companies ON companies.id = mbs_invoices.company_id
+        WHERE mbs_invoices.id = ${invoiceId} AND companies.org_id = ${user.orgId};
       `;
       if (invoices.length === 0) {
         return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
@@ -149,7 +169,7 @@ export async function POST(req: NextRequest) {
       const newStatus = actual === expected ? "verified" : "discrepancy";
       await sql`
         UPDATE mbs_invoices
-        SET status = ${newStatus}, verified_at = NOW(), verified_by_id = ${session.user.id}
+        SET status = ${newStatus}, verified_at = NOW(), verified_by_id = ${user.userId}
         WHERE id = ${invoiceId};
       `;
 
@@ -162,7 +182,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── Delivery receipt (day 0) — adds inventory with NO cost ──
+    // Delivery receipt (day 0) - adds inventory with NO cost
 
     if (action === "createDeliveryReceipt") {
       const {
@@ -186,8 +206,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: location must belong to the caller's org.
       const { rows: locations } = await sql`
-        SELECT company_id FROM locations WHERE id = ${locationId};
+        SELECT l.company_id
+        FROM locations l
+        JOIN companies c ON c.id = l.company_id
+        WHERE l.id = ${locationId} AND c.org_id = ${user.orgId};
       `;
       if (locations.length === 0) {
         return NextResponse.json({ error: "Location not found" }, { status: 404 });
@@ -226,7 +250,7 @@ export async function POST(req: NextRequest) {
           (${receiptId}, ${companyId}, ${locationId}, ${supplier ?? null},
            ${receiptNumber}, ${poNumber ?? null}, ${parsedDate.toISOString()},
            ${totalUnits ?? null}, ${charged}, ${credited}, ${net},
-           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${user.userId});
       `;
 
       return NextResponse.json({
@@ -247,12 +271,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: delivery receipt must belong to the caller's org.
       const { rows: receipts } = await sql`
         SELECT delivery_receipts.id, delivery_receipts.company_id, delivery_receipts.location_id,
                companies.slug AS company_slug
         FROM delivery_receipts
         JOIN companies ON companies.id = delivery_receipts.company_id
-        WHERE delivery_receipts.id = ${deliveryReceiptId};
+        WHERE delivery_receipts.id = ${deliveryReceiptId} AND companies.org_id = ${user.orgId};
       `;
       if (receipts.length === 0) {
         return NextResponse.json({ error: "Delivery receipt not found" }, { status: 404 });
@@ -290,7 +315,7 @@ export async function POST(req: NextRequest) {
            occurred_at, recorded_by_id, notes)
         VALUES
           (${crypto.randomUUID()}, ${batteryId}, NULL, 'in_warehouse',
-           ${receipt.location_id}, NOW(), ${session.user.id},
+           ${receipt.location_id}, NOW(), ${user.userId},
            ${`Received on delivery receipt ${deliveryReceiptId}`});
       `;
 
@@ -314,7 +339,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── Warranty pickup (sending warranties back to MBS) — NO inventory change ──
+    // Warranty pickup (sending warranties back to MBS) - NO inventory change
 
     if (action === "createWarrantyPickup") {
       const { locationId, supplier, memoNumber, pickupDate, fileUrl, fileName, notes, lines } = body;
@@ -326,8 +351,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: location must belong to the caller's org.
       const { rows: locations } = await sql`
-        SELECT company_id FROM locations WHERE id = ${locationId};
+        SELECT l.company_id
+        FROM locations l
+        JOIN companies c ON c.id = l.company_id
+        WHERE l.id = ${locationId} AND c.org_id = ${user.orgId};
       `;
       if (locations.length === 0) {
         return NextResponse.json({ error: "Location not found" }, { status: 404 });
@@ -365,7 +394,7 @@ export async function POST(req: NextRequest) {
         VALUES
           (${pickupId}, ${companyId}, ${locationId}, ${supplier ?? null},
            ${memoNumber}, ${parsedDate.toISOString()}, ${totalUnits},
-           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${user.userId});
       `;
 
       for (const l of lineArr) {
@@ -385,8 +414,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── MBS credit memo (applied against a warranty pickup) — NO inventory change ──
-    // Warranty cores should net to $0. If MBS charged cores, flag it.
+    // MBS credit memo (applied against a warranty pickup) - NO inventory change
 
     if (action === "applyWarrantyCreditMemo") {
       const {
@@ -410,8 +438,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Tenant guard: location must belong to the caller's org.
       const { rows: locations } = await sql`
-        SELECT company_id FROM locations WHERE id = ${locationId};
+        SELECT l.company_id
+        FROM locations l
+        JOIN companies c ON c.id = l.company_id
+        WHERE l.id = ${locationId} AND c.org_id = ${user.orgId};
       `;
       if (locations.length === 0) {
         return NextResponse.json({ error: "Location not found" }, { status: 404 });
@@ -438,7 +470,6 @@ export async function POST(req: NextRequest) {
       const charged = Number(coreCharges) || 0;
       const credited = Number(coreCredits) || 0;
       const net = charged - credited;
-      // Warranty cores should net to 0. Anything left charged is a flag.
       const flagged = net > 0;
 
       const memoId = crypto.randomUUID();
@@ -453,7 +484,7 @@ export async function POST(req: NextRequest) {
           (${memoId}, ${companyId}, ${locationId}, ${warrantyPickupId ?? null},
            ${memoNumber}, ${parsedDate.toISOString()}, ${warrantyCount ?? null},
            ${charged}, ${credited}, ${net}, ${flagged},
-           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${session.user.id});
+           ${fileUrl ?? null}, ${fileName ?? null}, ${notes ?? null}, ${user.userId});
       `;
 
       const lineArr: { model_code?: string; raw_description?: string; units: number }[] =
@@ -475,7 +506,7 @@ export async function POST(req: NextRequest) {
         flagged,
         message: flagged
           ? `FLAG: MBS charged ${net} core(s) on warranties that should net to zero.`
-          : "Warranty cores net to zero — no improper core charges.",
+          : "Warranty cores net to zero - no improper core charges.",
       });
     }
 
