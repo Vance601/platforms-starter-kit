@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// GET: data needed to drive the "Mark cores returned" form.
+// GET: data needed to drive the "Mark cores returned" form (this org only).
 //   - locations: distinct company_id / location_id pairs that have owed cores
 //   - owedByModel: per location+model, how many cores are currently owed
-//     (used to pre-fill and to warn if an invoice lists more than are owed)
 export async function GET() {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ success: true, locations: [], owedByModel: [] });
   }
 
   try {
@@ -26,6 +31,7 @@ export async function GET() {
       LEFT JOIN batteries b        ON b.id = cr.battery_id
       LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
       WHERE cr.status = 'owed'
+        AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY cr.company_id, cr.location_id, mdl.code
       ORDER BY cr.company_id, cr.location_id, model_code;
     `;
@@ -52,20 +58,17 @@ export async function GET() {
   }
 }
 
-// POST: clear owed cores against an MBS invoice (or a manual entry).
-// Body: {
-//   companyId: string,
-//   locationId: string,
-//   lines: [{ modelCode: string, qty: number }, ...]
-// }
-// For each line: flip the OLDEST owed cores of that model (scoped to
-// company+location) to status='returned', oldest-first by the sale's occurred_at.
-// If a line asks for more than are owed, we clear all that ARE owed and report
-// the shortfall as a warning (this gap = the accountability signal).
+// POST: clear owed cores against an MBS invoice (or a manual entry). This org only.
 export async function POST(req: NextRequest) {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ success: false, error: "No organization context." }, { status: 403 });
   }
 
   let body: {
@@ -91,6 +94,16 @@ export async function POST(req: NextRequest) {
       { success: false, error: "At least one line (modelCode + qty) is required." },
       { status: 400 }
     );
+  }
+
+  // Tenant guard: the target company must belong to the caller's org.
+  const { rows: companyCheck } = await sql`
+    SELECT id FROM companies
+    WHERE id = ${companyId} AND org_id = ${user.orgId}
+    LIMIT 1;
+  `;
+  if (companyCheck.length === 0) {
+    return NextResponse.json({ success: false, error: "Company not found." }, { status: 404 });
   }
 
   // Normalize + validate lines.
@@ -122,9 +135,8 @@ export async function POST(req: NextRequest) {
     }[] = [];
 
     for (const line of lines) {
-      // Flip the oldest N owed cores of this model at this location.
-      // Oldest-first uses the sale movement's occurred_at (to_status='sold'),
-      // because core_returns has no created_at and owed rows have null returned_at.
+      // Flip the oldest N owed cores of this model at this location, but only
+      // within a company that belongs to the caller's org (defense in depth).
       const { rows } = await sql`
         UPDATE core_returns
         SET status = 'returned', returned_at = now()
@@ -138,6 +150,7 @@ export async function POST(req: NextRequest) {
           WHERE cr.status = 'owed'
             AND cr.company_id = ${companyId}
             AND cr.location_id = ${locationId}
+            AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
             AND mdl.code = ${line.modelCode}
           ORDER BY bm.occurred_at ASC NULLS LAST
           LIMIT ${line.qty}
