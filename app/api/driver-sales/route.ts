@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // GET ?start=YYYY-MM-DD&end=YYYY-MM-DD
-// Owner-facing driver sales report. For each driver, over the date range:
-//   - units sold (sale movements: to_status = 'sold')
-//   - warranties (of those sold, how many were is_warranty = true)
-//   - battery type breakdown (counts by battery_types.name)
-//   - cores returned (return movements: to_status = 'returned_core')
+// Owner-facing driver sales report, scoped to the caller's organization.
 // All money figures, where present, are WHOLESALE COST only (batteries.cost). No retail.
 export async function GET(req: NextRequest) {
-  const signedIn = await isSignedIn();
-  if (!signedIn) {
+  const user = await getCurrentUser();
+  if (!user) {
     return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({
+      success: true,
+      range: { start: null, end: null },
+      salesByDriver: [],
+      typeByDriver: [],
+      coresByDriver: [],
+    });
   }
 
   // Date range. Default to the last 30 days if not provided.
@@ -33,7 +41,6 @@ export async function GET(req: NextRequest) {
 
   try {
     // Per-driver SALES: count of sold-movements and warranty subset, in range.
-    // Join the movement to the battery to read is_warranty.
     const { rows: salesByDriver } = await sql`
       SELECT
         d.id AS driver_id,
@@ -46,6 +53,7 @@ export async function GET(req: NextRequest) {
       WHERE m.to_status = 'sold'
         AND m.occurred_at >= ${startISO}
         AND m.occurred_at <= ${endISO}
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY d.id, d.name
       ORDER BY units_sold DESC, d.name ASC;
     `;
@@ -62,6 +70,7 @@ export async function GET(req: NextRequest) {
       WHERE m.to_status = 'sold'
         AND m.occurred_at >= ${startISO}
         AND m.occurred_at <= ${endISO}
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY m.driver_id, bt.name
       ORDER BY m.driver_id, bt.name;
     `;
@@ -72,9 +81,11 @@ export async function GET(req: NextRequest) {
         m.driver_id AS driver_id,
         COUNT(*)::int AS cores_returned
       FROM battery_movements m
+      JOIN batteries b ON b.id = m.battery_id
       WHERE m.to_status = 'returned_core'
         AND m.occurred_at >= ${startISO}
         AND m.occurred_at <= ${endISO}
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY m.driver_id;
     `;
 
