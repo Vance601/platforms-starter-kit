@@ -1,12 +1,20 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-const PUBLIC_ROUTES = ["/login", "/api/auth", "/api/migrate", "/api/seed", "/api/make-owner", "/manager", "/api/auth-manager", "/driver", "/api/auth-driver"];
+const PUBLIC_ROUTES = [
+  "/login",
+  "/api/auth",
+  "/manager",
+  "/api/auth-manager",
+  "/driver",
+  "/api/auth-driver",
+];
 
-// A manager_session cookie looks like "userId.expiry.signature".
-// Edge-safe check: confirm it's well-formed and not past its expiry.
-// (The login route signs it with MIGRATE_SECRET; pages can re-verify if needed.)
-function hasValidManagerSession(req: Request & { cookies: { get: (n: string) => { value: string } | undefined } }): boolean {
+const SIGNED_IN_ALLOWED = ["/onboarding", "/pending", "/api/signup"];
+
+function hasValidManagerSession(
+  req: Request & { cookies: { get: (n: string) => { value: string } | undefined } }
+): boolean {
   const cookie = req.cookies.get("manager_session");
   if (!cookie?.value) return false;
   const parts = cookie.value.split(".");
@@ -23,8 +31,13 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  // Allow GitHub-authenticated users (owner) OR a valid manager session.
-  if (req.auth || hasValidManagerSession(req)) {
+  const signedIn = Boolean(req.auth) || hasValidManagerSession(req);
+
+  if (signedIn && SIGNED_IN_ALLOWED.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
+
+  if (signedIn) {
     return NextResponse.next();
   }
 
