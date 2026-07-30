@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { PlusCircle, Building2, Truck, Battery, Package, Warehouse, RotateCcw, TrendingUp } from "lucide-react"
+import { PlusCircle, Building2, Truck, Battery, Package, Warehouse, RotateCcw, TrendingUp, AlertTriangle } from "lucide-react"
 import Link from "next/link"
 
 type Summary = {
@@ -51,9 +51,71 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/* ---------- Loading skeletons ---------- */
+/* These mirror the real layout so the page does not jump when data lands. */
+
+function SkeletonBar({ className = "" }: { className?: string }) {
+  return <div className={`animate-pulse rounded bg-muted ${className}`} />
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-busy="true" aria-live="polite">
+      <span className="sr-only">Loading dashboard data…</span>
+
+      {/* Four summary cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Card key={i} className="shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+              <SkeletonBar className="h-4 w-28" />
+              <SkeletonBar className="h-5 w-5 rounded-full" />
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-3">
+              <SkeletonBar className="h-7 w-16" />
+              <SkeletonBar className="mt-2 h-3 w-40" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* By Battery Type */}
+      <div>
+        <h2 className="text-xl font-semibold mb-3 mt-2">By Battery Type</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="shadow-sm border-l-4 border-l-muted">
+              <CardHeader className="pb-2">
+                <SkeletonBar className="h-5 w-24" />
+              </CardHeader>
+              <CardContent>
+                <SkeletonBar className="h-8 w-12" />
+                <SkeletonBar className="mt-3 h-3 w-full" />
+                <SkeletonBar className="mt-2 h-3 w-3/4" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
+      {/* Returned cores */}
+      <Card className="shadow-sm border-l-4 border-l-muted">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
+          <SkeletonBar className="h-4 w-32" />
+        </CardHeader>
+        <CardContent className="pt-0 px-4 pb-3">
+          <SkeletonBar className="h-7 w-12" />
+          <SkeletonBar className="mt-2 h-3 w-36" />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [summaryError, setSummaryError] = useState("")
 
   // Units-sold section state
   const [startDate, setStartDate] = useState<string>(isoDaysAgo(30))
@@ -62,15 +124,34 @@ export default function Dashboard() {
   const [salesLoading, setSalesLoading] = useState(false)
   const [salesError, setSalesError] = useState("")
 
-  useEffect(() => {
-    fetch("/api/inventory/summary", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.success) setSummary(j)
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false))
+  const loadSummary = useCallback(async () => {
+    setIsLoading(true)
+    setSummaryError("")
+    try {
+      const res = await fetch("/api/inventory/summary", { cache: "no-store" })
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`)
+      }
+      const j = await res.json()
+      if (j?.success) {
+        setSummary(j)
+      } else {
+        setSummary(null)
+        setSummaryError(j?.error || "The inventory summary could not be loaded.")
+      }
+    } catch (err) {
+      setSummary(null)
+      setSummaryError(
+        err instanceof Error ? err.message : "The inventory summary could not be loaded."
+      )
+    } finally {
+      setIsLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    loadSummary()
+  }, [loadSummary])
 
   function loadSales() {
     if (!startDate || !endDate) {
@@ -131,9 +212,26 @@ export default function Dashboard() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-24">
-          <p className="text-lg text-muted-foreground">Loading…</p>
-        </div>
+        <DashboardSkeleton />
+      ) : summaryError ? (
+        /* Real failure — never show zeros as if they were real numbers. */
+        <Card className="shadow-sm border-l-4 border-l-red-600">
+          <CardHeader className="flex flex-row items-center gap-2 py-4 px-4">
+            <AlertTriangle className="h-5 w-5 text-red-600" />
+            <CardTitle className="text-base font-medium">
+              Inventory data unavailable
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <p className="text-sm text-muted-foreground">
+              The dashboard could not reach the inventory summary, so the numbers below
+              are being withheld rather than shown as zeros. Details: {summaryError}
+            </p>
+            <Button onClick={loadSummary} className="mt-3" variant="outline">
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* Summary Cards — real data from /api/inventory/summary */}
@@ -292,7 +390,15 @@ export default function Dashboard() {
 
                 <div className="mt-4">
                   {salesLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading units sold…</p>
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="rounded-md border p-4">
+                          <SkeletonBar className="h-4 w-32" />
+                          <SkeletonBar className="mt-2 h-3 w-24" />
+                          <SkeletonBar className="mt-4 h-3 w-full" />
+                        </div>
+                      ))}
+                    </div>
                   ) : !sales || sales.locations.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
                       No units sold in this date range.
