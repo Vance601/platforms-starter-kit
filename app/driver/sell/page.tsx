@@ -44,6 +44,11 @@ export default function DriverSellPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Core disposition. Default is the customer returns their old battery.
+  // If they keep it, an upcharge is owed and the driver enters the amount.
+  const [coreKept, setCoreKept] = useState(false);
+  const [coreCharge, setCoreCharge] = useState<string>("");
+
   // Warranty state
   const [isWarranty, setIsWarranty] = useState(false);
   const [soldBatteries, setSoldBatteries] = useState<SoldBattery[]>([]);
@@ -111,7 +116,11 @@ export default function DriverSellPage() {
         batteryId: selectedId,
         callNumber: callNumber.trim(),
         isWarranty,
+        coreKept,
       };
+      if (coreKept) {
+        payload.coreCharge = coreCharge.trim();
+      }
       if (isWarranty) {
         if (replacesId === "OTHER") {
           payload.warrantyNote = warrantyNote.trim();
@@ -136,6 +145,8 @@ export default function DriverSellPage() {
       // Reset everything.
       setSelectedId(null);
       setCallNumber("");
+      setCoreKept(false);
+      setCoreCharge("");
       setIsWarranty(false);
       setReplacesId("");
       setWarrantyNote("");
@@ -264,6 +275,55 @@ export default function DriverSellPage() {
                 placeholder="e.g. 1234567"
                 className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none"
               />
+            </div>
+          ) : null}
+
+          {/* Core disposition */}
+          {claimedTruck && batteries.length > 0 ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={coreKept}
+                  onChange={(e) => {
+                    setCoreKept(e.target.checked);
+                    if (!e.target.checked) setCoreCharge("");
+                  }}
+                  className="h-5 w-5"
+                />
+                <span className="font-medium">
+                  Customer kept their old battery
+                </span>
+              </label>
+
+              {coreKept ? (
+                <div className="mt-3 space-y-2">
+                  <label className="text-sm text-slate-400">
+                    Core charge amount (required)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg text-slate-400">$</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      value={coreCharge}
+                      onChange={(e) => setCoreCharge(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Recorded against this sale. Payment is collected separately.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-500">
+                  Leave unchecked if the old battery is coming back — a core will
+                  be logged as owed.
+                </p>
+              )}
             </div>
           ) : null}
 
