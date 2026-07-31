@@ -1,17 +1,30 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    // Accepts the GitHub session AND the manager_session cookie.
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
+      );
+    }
+    if (user.role !== "owner" && user.role !== "manager") {
+      return NextResponse.json(
+        { success: false, error: "Not authorized." },
+        { status: 403 }
+      );
+    }
+    if (!user.orgId) {
+      return NextResponse.json(
+        { success: false, error: "No organization context." },
+        { status: 403 }
       );
     }
 
@@ -46,9 +59,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify the company exists before updating.
+    // TENANT BOUNDARY: target company must be inside the caller's org.
     const { rows: companyRows } = await sql`
-      SELECT id FROM companies WHERE id = ${companyId} LIMIT 1;
+      SELECT id FROM companies
+      WHERE id = ${companyId} AND org_id = ${user.orgId}
+      LIMIT 1;
     `;
     if (companyRows.length === 0) {
       return NextResponse.json(
@@ -64,6 +79,9 @@ export async function POST(req: Request) {
           company_id = ${companyId},
           updated_at = now()
       WHERE id = ${id}
+        AND company_id IN (
+          SELECT id FROM companies WHERE org_id = ${user.orgId}
+        )
       RETURNING id;
     `;
 
