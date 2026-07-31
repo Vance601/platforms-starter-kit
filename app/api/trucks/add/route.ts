@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -8,11 +8,24 @@ export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const signedIn = await isSignedIn();
-    if (!signedIn) {
+    // Accepts the GitHub session AND the manager_session cookie.
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
+      );
+    }
+    if (user.role !== "owner" && user.role !== "manager") {
+      return NextResponse.json(
+        { success: false, error: "Not authorized." },
+        { status: 403 }
+      );
+    }
+    if (!user.orgId) {
+      return NextResponse.json(
+        { success: false, error: "No organization context." },
+        { status: 403 }
       );
     }
 
@@ -29,8 +42,13 @@ export async function POST(req: Request) {
       );
     }
 
+    // TENANT BOUNDARY: resolve the slug only inside the caller's org. Slugs
+    // are not globally unique across organizations, so an unscoped lookup
+    // could resolve to another tenant's company.
     const { rows: companyRows } = await sql`
-      SELECT id FROM companies WHERE slug = ${companySlug} LIMIT 1;
+      SELECT id FROM companies
+      WHERE slug = ${companySlug} AND org_id = ${user.orgId}
+      LIMIT 1;
     `;
     if (companyRows.length === 0) {
       return NextResponse.json(
