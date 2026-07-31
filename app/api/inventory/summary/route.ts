@@ -1,22 +1,44 @@
-
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // Real inventory summary, read live from Neon. Drives both the Inventory page
-// and the Dashboard summary tiles. No hardcoded types/locations — everything
+// and the Dashboard summary tiles. No hardcoded types/locations -- everything
 // comes from the database, so it stays correct as stock changes.
+//
+// Tenancy: scoped to the caller's organization via
+//   batteries -> companies (company_id) -> organizations (org_id)
+// Previously this route only checked "is signed in", which meant any signed-in
+// user would have seen every organization's stock. Fail-closed: no orgId
+// returns zeros rather than another tenant's numbers.
 export async function GET() {
   try {
-    const signedIn = await isSignedIn();
-    if (!signedIn) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json(
         { success: false, error: "Not signed in." },
         { status: 401 }
       );
+    }
+
+    const empty = {
+      success: true,
+      total: 0,
+      inWarehouse: 0,
+      onTruck: 0,
+      returnedCore: 0,
+      byType: {} as Record<string, number>,
+      byLocation: {} as Record<string, number>,
+      byStatus: {} as Record<string, number>,
+      typeLocation: {} as Record<string, Record<string, number>>,
+    };
+
+    if (!user.orgId) {
+      // No tenant context -- return an empty but well-formed payload.
+      return NextResponse.json(empty);
     }
 
     const { rows } = await sql`
@@ -26,8 +48,10 @@ export async function GET() {
         b.status AS status,
         count(*)::int AS count
       FROM batteries b
+      JOIN companies c ON c.id = b.company_id
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN locations     l  ON l.id  = b.location_id
+      WHERE c.org_id = ${user.orgId}
       GROUP BY bt.name, l.name, b.status;
     `;
 
