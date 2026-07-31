@@ -12,7 +12,7 @@ import {
 import Link from "next/link"
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, LabelList,
 } from "recharts"
 
 /* ------------------------------------------------------------------ */
@@ -527,12 +527,13 @@ export default function Dashboard() {
                       ) : (
                         <div className="h-[280px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={charts.inventoryByStatus} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                            <BarChart data={charts.inventoryByStatus} margin={{ top: 24, right: 8, left: 0, bottom: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
                               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
                               <Tooltip cursor={{ fillOpacity: 0.1 }} />
                               <Bar dataKey="count" name="Batteries" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="count" position="top" fontSize={12} fill="#334155" />
                                 {charts.inventoryByStatus.map((d) => (
                                   <Cell key={d.status} fill={STATUS_FILL[d.status] || "#64748b"} />
                                 ))}
@@ -560,7 +561,7 @@ export default function Dashboard() {
                       ) : (
                         <div className="h-[280px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={charts.locationTypes} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                            <BarChart data={charts.locationTypes} margin={{ top: 24, right: 8, left: 0, bottom: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
                               <XAxis dataKey="location" tick={{ fontSize: 12 }} />
                               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
@@ -568,7 +569,11 @@ export default function Dashboard() {
                               <Legend wrapperStyle={{ fontSize: 12 }} />
                               {charts.typeNames.map((t, i) => (
                                 <Bar key={t} dataKey={t} stackId="a" name={t}
-                                     fill={TYPE_FILL[t] || SERIES[i % SERIES.length]} />
+                                     fill={TYPE_FILL[t] || SERIES[i % SERIES.length]}>
+                                  {i === charts.typeNames.length - 1 && (
+                                    <LabelList dataKey="total" position="top" fontSize={12} fill="#334155" />
+                                  )}
+                                </Bar>
                               ))}
                             </BarChart>
                           </ResponsiveContainer>
@@ -594,12 +599,14 @@ export default function Dashboard() {
                         <div className="h-[280px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={charts.movementFlow} layout="vertical"
-                                      margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+                                      margin={{ top: 8, right: 44, left: 8, bottom: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                               <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
                               <YAxis type="category" dataKey="label" width={150} tick={{ fontSize: 11 }} />
                               <Tooltip cursor={{ fillOpacity: 0.1 }} />
-                              <Bar dataKey="count" name="Movements" fill="#2563eb" radius={[0, 4, 4, 0]} />
+                              <Bar dataKey="count" name="Movements" fill="#2563eb" radius={[0, 4, 4, 0]}>
+                                <LabelList dataKey="count" position="right" fontSize={12} fill="#334155" />
+                              </Bar>
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
@@ -623,12 +630,14 @@ export default function Dashboard() {
                       ) : (
                         <div className="h-[280px] w-full">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={charts.unitsSoldByMonth} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                            <BarChart data={charts.unitsSoldByMonth} margin={{ top: 24, right: 8, left: 0, bottom: 8 }}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} />
                               <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                               <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
                               <Tooltip cursor={{ fillOpacity: 0.1 }} />
-                              <Bar dataKey="count" name="Units sold" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="count" name="Units sold" fill="#16a34a" radius={[4, 4, 0, 0]}>
+                                <LabelList dataKey="count" position="top" fontSize={12} fill="#334155" />
+                              </Bar>
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
