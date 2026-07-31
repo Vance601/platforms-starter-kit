@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,8 +12,11 @@ export const maxDuration = 60;
 // reviews and confirms before any inventory is committed.
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    // Accept BOTH auth paths: the GitHub/NextAuth session (owner) and the
+    // manager_session cookie (staff). Calling auth() directly only saw GitHub
+    // sessions, so a signed-in manager could not scan an invoice.
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     }
 
