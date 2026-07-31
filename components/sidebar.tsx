@@ -1,196 +1,52 @@
 "use client"
 
-import type React from "react"
-
-import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  BarChart3,
-  Boxes,
-  Home,
-  Package,
-  Settings,
-  Truck,
-  Users,
-  Battery,
-  PackageCheck,
-  PackagePlus,
-  FileText,
-  MapPin,
-  ClipboardCheck,
-  Scale,
-  ClipboardList,
-} from "lucide-react"
+import Sidebar from "@/components/sidebar"
 
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-
-export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
+export default function AppShell({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   const pathname = usePathname()
+  const isDriver = pathname?.startsWith("/driver")
 
-  return (
-    <div
-      className={cn("h-screen w-64 flex-shrink-0 border-r bg-background fixed left-0 top-0 overflow-y-auto", className)}
-    >
-      <div className="space-y-2 py-2">
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Duggers Tracker</h2>
-          <div className="space-y-0.5">
-            <Button variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/">
-                <Home className="mr-2 h-4 w-4" />
-                Dashboard
-              </Link>
-            </Button>
+  // Ends the driver's shift on a shared phone or tablet. Clears the
+  // driver_session cookie and returns to the PIN screen.
+  async function handleDriverSignOut() {
+    try {
+      await fetch("/api/auth-driver", { method: "DELETE" })
+    } catch {
+      // best effort
+    }
+    window.location.href = "/driver/login"
+  }
 
-            <Button
-              variant={pathname === "/receive-order" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
+  if (isDriver) {
+    // Standalone mobile shell for driver-facing pages — no owner sidebar, no left margin
+    const isDriverLogin = pathname?.startsWith("/driver/login")
+    return (
+      <div className="min-h-screen mx-auto w-full max-w-md px-4 py-4">
+        {children}
+        {!isDriverLogin ? (
+          <div className="mt-8 border-t border-slate-700 pt-4 pb-8">
+            <button
+              onClick={handleDriverSignOut}
+              className="w-full rounded-lg border border-slate-700 px-4 py-3 text-sm font-medium text-slate-400 hover:border-red-500 hover:text-red-400"
             >
-              <Link href="/receive-order">
-                <PackageCheck className="mr-2 h-4 w-4" />
-                Receive Order
-              </Link>
-            </Button>
-            <Button
-              variant={pathname === "/auto-reorders" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/auto-reorders">
-                <PackagePlus className="mr-2 h-4 w-4" />
-                Auto Reorders
-              </Link>
-            </Button>
-
-            <Button
-              variant={pathname === "/inventory" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/inventory">
-                <Boxes className="mr-2 h-4 w-4" />
-                Inventory
-              </Link>
-            </Button>
-            <Button
-              variant={pathname === "/batteries" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/batteries">
-                <Battery className="mr-2 h-4 w-4" />
-                Batteries
-              </Link>
-            </Button>
-
-            <Button variant={pathname === "/fleet" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/fleet">
-                <Truck className="mr-2 h-4 w-4" />
-                Fleet
-              </Link>
-            </Button>
-            <Button variant={pathname === "/team" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/team">
-                <Users className="mr-2 h-4 w-4" />
-                Team
-              </Link>
-            </Button>
+              Sign out
+            </button>
           </div>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Reports</h2>
-          <div className="space-y-0.5">
-            <Button variant={pathname === "/reports" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/reports">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Analytics
-              </Link>
-            </Button>
-            <Button variant={pathname === "/alerts" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/alerts">
-                <Package className="mr-2 h-4 w-4" />
-                Alerts
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Admin</h2>
-          <Button variant={pathname === "/admin/drivers" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/drivers">
-              <Users className="mr-2 h-4 w-4" />
-              Drivers
-            </Link>
-          </Button>
-          <Button variant={pathname === "/locations" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/locations">
-              <MapPin className="mr-2 h-4 w-4" />
-              Locations
-            </Link>
-          </Button>
-          <Button variant={pathname === "/reconcile" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/reconcile">
-              <Battery className="mr-2 h-4 w-4" />
-              Battery Audit
-            </Link>
-          </Button>
-          <Button variant={pathname === "/warranty-report" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/warranty-report">
-              <FileText className="mr-2 h-4 w-4" />
-              Warranty Report
-            </Link>
-          </Button>
-          <Button variant={pathname === "/warranty" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/warranty">
-              <ClipboardCheck className="mr-2 h-4 w-4" />
-              Warranty Reconcile
-            </Link>
-          </Button>
-          <Button variant={pathname === "/core-accountability" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/core-accountability">
-              <Scale className="mr-2 h-4 w-4" />
-              Core Accountability
-            </Link>
-          </Button>
-          <Button variant={pathname === "/core-reconcile" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/core-reconcile">
-              <ClipboardList className="mr-2 h-4 w-4" />
-              Driver Reconcile
-            </Link>
-          </Button>
-          <Button variant={pathname === "/driver-sales" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/driver-sales">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Driver Sales
-            </Link>
-          </Button>
-          <Button variant={pathname === "/admin/load-approvals" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/load-approvals">
-              <PackageCheck className="mr-2 h-4 w-4" />
-              Load Approvals
-            </Link>
-          </Button>
-          <Button variant={pathname === "/admin/assign-trucks" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/assign-trucks">
-              <Truck className="mr-2 h-4 w-4" />
-              Assign to Trucks
-            </Link>
-          </Button>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
-          <Button variant={pathname === "/settings" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/settings">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Link>
-          </Button>
-        </div>
+        ) : null}
       </div>
+    )
+  }
+
+  // Owner shell — sidebar + offset main, exactly as before
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <main className="flex-1 ml-64 p-4 overflow-auto">{children}</main>
     </div>
   )
 }
-
-export default Sidebar
