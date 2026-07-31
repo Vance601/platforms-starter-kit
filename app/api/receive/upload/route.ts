@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { put } from "@vercel/blob";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,11 +14,22 @@ type LineItem = {
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
+    // Accept BOTH auth paths. getCurrentUser resolves the GitHub/NextAuth
+    // session (owner) and the manager_session cookie (staff). The previous
+    // version called auth() directly, which only saw GitHub sessions, so a
+    // signed-in manager was rejected with "Unauthorized" and could not
+    // receive stock at all.
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
     }
-    const userId = session.user.id;
+    if (user.role !== "owner" && user.role !== "manager") {
+      return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+    }
+    if (!user.orgId) {
+      return NextResponse.json({ success: false, error: "No organization context." }, { status: 403 });
+    }
+    const userId = user.userId;
 
     const form = await req.formData();
     const kind = String(form.get("kind") || "");
@@ -32,6 +43,38 @@ export async function POST(req: Request) {
     // Common header fields
     const company_id     = (form.get("company_id") as string) || null;
     const location_id    = (form.get("location_id") as string) || null;
+
+    // TENANT BOUNDARY. company_id and location_id are supplied by the browser,
+    // so they must be proven to belong to the caller's organization before any
+    // insert. Without this, a signed-in user of one org could write stock into
+    // another org's company. Mirrors the check in /api/locations/add.
+    if (company_id) {
+      const { rows: okCompany } = await sql`
+        SELECT id FROM companies
+        WHERE id = ${company_id} AND org_id = ${user.orgId}
+        LIMIT 1;
+      `;
+      if (okCompany.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "That company was not found." },
+          { status: 403 }
+        );
+      }
+    }
+    if (location_id) {
+      const { rows: okLocation } = await sql`
+        SELECT l.id FROM locations l
+        JOIN companies c ON c.id = l.company_id
+        WHERE l.id = ${location_id} AND c.org_id = ${user.orgId}
+        LIMIT 1;
+      `;
+      if (okLocation.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "That location was not found." },
+          { status: 403 }
+        );
+      }
+    }
     const supplier       = (form.get("supplier") as string) || null;
     const mbs_invoice_id = (form.get("mbs_invoice_id") as string) || null;
     const dateStr        = (form.get("date") as string) || null; // YYYY-MM-DD
