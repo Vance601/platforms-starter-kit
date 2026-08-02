@@ -18,6 +18,7 @@ import {
   FileText,
   MapPin,
   ClipboardCheck,
+  QrCode,
   Scale,
   ClipboardList,
   LogOut,
@@ -191,6 +192,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
             <Link href="/admin/assign-trucks">
               <Truck className="mr-2 h-4 w-4" />
               Assign to Trucks
+            </Link>
+          </Button>
+          <Button variant={pathname === "/print-labels" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/print-labels">
+              <QrCode className="mr-2 h-4 w-4" />
+              Print Labels
             </Link>
           </Button>
         </div>
