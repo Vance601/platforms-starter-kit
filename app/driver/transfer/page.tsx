@@ -24,7 +24,7 @@ export default function TransferPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/trucks");
+      const res = await fetch("/api/driver/trucks");
       const data = await res.json();
       if (data.success) {
         setTrucks(data.trucks);
