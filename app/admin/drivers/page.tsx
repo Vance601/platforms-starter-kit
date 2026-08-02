@@ -17,6 +17,7 @@ export default function AdminDrivers() {
   const [loading, setLoading] = useState(true);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
   // Add-driver form
@@ -45,6 +46,13 @@ export default function AdminDrivers() {
     }
   }
 
+  // Clear the green confirmation banner after a few seconds.
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -61,6 +69,7 @@ export default function AdminDrivers() {
     }
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const res = await fetch("/api/admin/drivers", {
         method: "POST",
@@ -70,7 +79,13 @@ export default function AdminDrivers() {
       const data = await res.json();
       if (!data.success) setError(data.error || "Failed to add");
       else {
+        const added = newName.trim();
         setNewName("");
+        setNotice(
+          data.message
+            ? `${data.message} - starting PIN is 0000. The driver sets their own at first login.`
+            : `Added ${added} - starting PIN is 0000.`
+        );
         await loadDrivers();
       }
     } catch {
@@ -82,6 +97,7 @@ export default function AdminDrivers() {
   async function patchDriver(body: Record<string, unknown>) {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const res = await fetch("/api/admin/drivers", {
         method: "PATCH",
@@ -90,7 +106,10 @@ export default function AdminDrivers() {
       });
       const data = await res.json();
       if (!data.success) setError(data.error || "Action failed");
-      else await loadDrivers();
+      else {
+        setNotice(data.message || "Done");
+        await loadDrivers();
+      }
     } catch {
       setError("Network error");
     }
@@ -184,6 +203,21 @@ export default function AdminDrivers() {
             }}
           >
             {error}
+          </div>
+        )}
+
+        {notice && (
+          <div
+            style={{
+              background: "#14532d",
+              color: "#bbf7d0",
+              padding: 12,
+              borderRadius: 10,
+              marginBottom: 16,
+              fontSize: 14,
+            }}
+          >
+            {notice}
           </div>
         )}
 
