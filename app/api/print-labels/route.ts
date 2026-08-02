@@ -51,20 +51,22 @@ export async function GET(req: NextRequest) {
         GROUP BY dr.id, dr.supplier, dr.receipt_number, dr.receipt_date;
       `;
 
+      // mbs_invoices has no supplier_id - it carries location_id instead,
+      // so invoice batches are labelled by location.
       const { rows: invoices } = await sql`
         SELECT
-          'inv:' || i.id            AS id,
-          COALESCE(s.name, 'MBS')   AS supplier,
-          i.invoice_number          AS reference,
-          i.invoice_date            AS batch_date,
-          COUNT(b.id)::int          AS battery_count,
-          'Invoice'                 AS source
+          'inv:' || i.id                     AS id,
+          COALESCE(l.name, 'Invoice')        AS supplier,
+          i.invoice_number                   AS reference,
+          i.invoice_date                     AS batch_date,
+          COUNT(b.id)::int                   AS battery_count,
+          'Invoice'                          AS source
         FROM mbs_invoices i
         JOIN companies c ON c.id = i.company_id
-        LEFT JOIN suppliers s ON s.id = i.supplier_id
+        LEFT JOIN locations l ON l.id = i.location_id
         LEFT JOIN batteries b ON b.mbs_invoice_id = i.id
         WHERE c.org_id = ${user.orgId}
-        GROUP BY i.id, s.name, i.invoice_number, i.invoice_date;
+        GROUP BY i.id, l.name, i.invoice_number, i.invoice_date;
       `;
 
       // Empty batches are noise in the picker - hide them.
