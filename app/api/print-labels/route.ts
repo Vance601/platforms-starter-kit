@@ -1,226 +1,123 @@
-"use client"
+// app/api/print-labels/route.ts
+// GET (no query)        -> list label batches for the picker (org-scoped)
+// GET ?deliveryId=<id>  -> list batteries in that batch (org-scoped)
+// Owner/manager only, via session. No password in the URL.
+//
+// Batteries arrive by TWO paths: a delivery receipt (day 0, no cost) or an MBS
+// invoice. Listing only delivery_receipts meant invoice-received stock could
+// never be labelled. Both are listed here, with the id prefixed so the second
+// call knows which table to look in:
+//   dr:<uuid>  = delivery receipt
+//   inv:<uuid> = MBS invoice
+// Bare uuids are still treated as delivery receipts for backward compatibility.
 
-import type React from "react"
+import { NextRequest, NextResponse } from "next/server";
+import { sql } from "@vercel/postgres";
+import { getCurrentUser } from "@/lib/current-user";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import {
-  BarChart3,
-  Boxes,
-  Home,
-  Package,
-  Settings,
-  Truck,
-  Users,
-  Battery,
-  PackageCheck,
-  PackagePlus,
-  FileText,
-  MapPin,
-  ClipboardCheck,
-  QrCode,
-  Scale,
-  ClipboardList,
-  LogOut,
-} from "lucide-react"
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
-import { signOut } from "next-auth/react"
-
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-
-export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
-  const pathname = usePathname()
-
-  // End the session on a shared terminal. Clears the manager cookie first,
-  // then hands off to NextAuth which clears any GitHub session and redirects.
-  // Works for either login type -- whichever is not present is a no-op.
-  async function handleSignOut() {
-    try {
-      await fetch("/api/auth-manager", { method: "DELETE" })
-    } catch {
-      // Cookie clearing is best-effort; still sign out of NextAuth below.
-    }
-    await signOut({ callbackUrl: "/login" })
+export async function GET(req: NextRequest) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ success: false, error: "Not signed in." }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 });
+  }
+  if (!user.orgId) {
+    // Fail-closed: no tenant context means no data rather than a leak.
+    return NextResponse.json({ success: true, deliveries: [], batteries: [] });
   }
 
-  return (
-    <div
-      className={cn("h-screen w-64 flex-shrink-0 border-r bg-background fixed left-0 top-0 overflow-y-auto", className)}
-    >
-      <div className="space-y-2 py-2">
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Duggers Tracker</h2>
-          <div className="space-y-0.5">
-            <Button variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/">
-                <Home className="mr-2 h-4 w-4" />
-                Dashboard
-              </Link>
-            </Button>
+  const raw = req.nextUrl.searchParams.get("deliveryId");
 
-            <Button
-              variant={pathname === "/receive-order" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/receive-order">
-                <PackageCheck className="mr-2 h-4 w-4" />
-                Receive Order
-              </Link>
-            </Button>
-            <Button
-              variant={pathname === "/auto-reorders" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/auto-reorders">
-                <PackagePlus className="mr-2 h-4 w-4" />
-                Auto Reorders
-              </Link>
-            </Button>
+  try {
+    // ---------- No id: list every batch that has batteries to label ----------
+    if (!raw) {
+      const { rows: receipts } = await sql`
+        SELECT
+          'dr:' || dr.id            AS id,
+          dr.supplier               AS supplier,
+          dr.receipt_number         AS reference,
+          dr.receipt_date           AS batch_date,
+          COUNT(b.id)::int          AS battery_count,
+          'Delivery receipt'        AS source
+        FROM delivery_receipts dr
+        JOIN companies c ON c.id = dr.company_id
+        LEFT JOIN batteries b ON b.delivery_receipt_id = dr.id
+        WHERE c.org_id = ${user.orgId}
+        GROUP BY dr.id, dr.supplier, dr.receipt_number, dr.receipt_date;
+      `;
 
-            <Button
-              variant={pathname === "/inventory" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/inventory">
-                <Boxes className="mr-2 h-4 w-4" />
-                Inventory
-              </Link>
-            </Button>
-            <Button
-              variant={pathname === "/batteries" ? "secondary" : "ghost"}
-              className="w-full justify-start"
-              asChild
-            >
-              <Link href="/batteries">
-                <Battery className="mr-2 h-4 w-4" />
-                Batteries
-              </Link>
-            </Button>
+      const { rows: invoices } = await sql`
+        SELECT
+          'inv:' || i.id            AS id,
+          COALESCE(s.name, 'MBS')   AS supplier,
+          i.invoice_number          AS reference,
+          i.invoice_date            AS batch_date,
+          COUNT(b.id)::int          AS battery_count,
+          'Invoice'                 AS source
+        FROM mbs_invoices i
+        JOIN companies c ON c.id = i.company_id
+        LEFT JOIN suppliers s ON s.id = i.supplier_id
+        LEFT JOIN batteries b ON b.mbs_invoice_id = i.id
+        WHERE c.org_id = ${user.orgId}
+        GROUP BY i.id, s.name, i.invoice_number, i.invoice_date;
+      `;
 
-            <Button variant={pathname === "/fleet" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/fleet">
-                <Truck className="mr-2 h-4 w-4" />
-                Fleet
-              </Link>
-            </Button>
-            <Button variant={pathname === "/team" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/team">
-                <Users className="mr-2 h-4 w-4" />
-                Team
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Reports</h2>
-          <div className="space-y-0.5">
-            <Button variant={pathname === "/reports" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/reports">
-                <BarChart3 className="mr-2 h-4 w-4" />
-                Analytics
-              </Link>
-            </Button>
-            <Button variant={pathname === "/alerts" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-              <Link href="/alerts">
-                <Package className="mr-2 h-4 w-4" />
-                Alerts
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Admin</h2>
-          <Button variant={pathname === "/admin/drivers" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/drivers">
-              <Users className="mr-2 h-4 w-4" />
-              Drivers
-            </Link>
-          </Button>
-          <Button variant={pathname === "/locations" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/locations">
-              <MapPin className="mr-2 h-4 w-4" />
-              Locations
-            </Link>
-          </Button>
-          <Button variant={pathname === "/reconcile" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/reconcile">
-              <Battery className="mr-2 h-4 w-4" />
-              Battery Audit
-            </Link>
-          </Button>
-          <Button variant={pathname === "/warranty-report" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/warranty-report">
-              <FileText className="mr-2 h-4 w-4" />
-              Warranty Report
-            </Link>
-          </Button>
-          <Button variant={pathname === "/warranty" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/warranty">
-              <ClipboardCheck className="mr-2 h-4 w-4" />
-              Warranty Reconcile
-            </Link>
-          </Button>
-          <Button variant={pathname === "/core-accountability" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/core-accountability">
-              <Scale className="mr-2 h-4 w-4" />
-              Core Accountability
-            </Link>
-          </Button>
-          <Button variant={pathname === "/core-reconcile" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/core-reconcile">
-              <ClipboardList className="mr-2 h-4 w-4" />
-              Driver Reconcile
-            </Link>
-          </Button>
-          <Button variant={pathname === "/driver-sales" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/driver-sales">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Driver Sales
-            </Link>
-          </Button>
-          <Button variant={pathname === "/admin/load-approvals" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/load-approvals">
-              <PackageCheck className="mr-2 h-4 w-4" />
-              Load Approvals
-            </Link>
-          </Button>
-          <Button variant={pathname === "/admin/assign-trucks" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/admin/assign-trucks">
-              <Truck className="mr-2 h-4 w-4" />
-              Assign to Trucks
-            </Link>
-          </Button>
-          <Button variant={pathname === "/print-labels" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/print-labels">
-              <QrCode className="mr-2 h-4 w-4" />
-              Print Labels
-            </Link>
-          </Button>
-        </div>
-        <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
-          <Button variant={pathname === "/settings" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
-            <Link href="/settings">
-              <Settings className="mr-2 h-4 w-4" />
-              Settings
-            </Link>
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700"
-            onClick={handleSignOut}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            Sign out
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
+      // Empty batches are noise in the picker - hide them.
+      const deliveries = [...receipts, ...invoices]
+        .filter((d) => Number(d.battery_count) > 0)
+        .sort((a, b) => {
+          const ad = a.batch_date ? new Date(a.batch_date as string).getTime() : 0;
+          const bd = b.batch_date ? new Date(b.batch_date as string).getTime() : 0;
+          return bd - ad;
+        });
+
+      return NextResponse.json({ success: true, deliveries });
+    }
+
+    // ---------- Id given: return that batch's batteries ----------
+    const isInvoice = raw.startsWith("inv:");
+    const id = raw.replace(/^(dr:|inv:)/, "");
+
+    if (isInvoice) {
+      const { rows: batteries } = await sql`
+        SELECT
+          b.id,
+          b.barcode,
+          COALESCE(mdl.code, '') AS model_code
+        FROM batteries b
+        JOIN mbs_invoices i ON i.id = b.mbs_invoice_id
+        JOIN companies c    ON c.id = i.company_id
+        LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+        WHERE b.mbs_invoice_id = ${id}
+          AND c.org_id = ${user.orgId}
+        ORDER BY b.barcode ASC;
+      `;
+      return NextResponse.json({ success: true, batteries });
+    }
+
+    const { rows: batteries } = await sql`
+      SELECT
+        b.id,
+        b.barcode,
+        COALESCE(mdl.code, '') AS model_code
+      FROM batteries b
+      JOIN delivery_receipts dr ON dr.id = b.delivery_receipt_id
+      JOIN companies c ON c.id = dr.company_id
+      LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+      WHERE b.delivery_receipt_id = ${id}
+        AND c.org_id = ${user.orgId}
+      ORDER BY b.barcode ASC;
+    `;
+    return NextResponse.json({ success: true, batteries });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
 }
-
-export default Sidebar
