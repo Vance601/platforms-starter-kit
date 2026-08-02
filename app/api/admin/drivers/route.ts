@@ -1,6 +1,13 @@
+// app/api/admin/drivers/route.ts
+// Owner/manager only, scoped to the caller's organization.
+//
+// Scoping is by orgId, NOT companyIds: managers have no rows in user_companies,
+// so scoping on that would lock them out. Every read and write is constrained to
+// companies belonging to the caller's org.
+
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { getCurrentUser } from "@/lib/current-user";
+import { getCurrentUser, type CurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +21,10 @@ function hashPin(pin: string): string {
 }
 
 // Owner/manager gate - verified on EVERY request via the session.
-async function requireManager(): Promise<{ ok: true } | { ok: false; res: NextResponse }> {
+// Also requires an org, since every query below is scoped by it.
+async function requireManager(): Promise<
+  { ok: true; user: CurrentUser & { orgId: string } } | { ok: false; res: NextResponse }
+> {
   const user = await getCurrentUser();
   if (!user) {
     return {
@@ -28,13 +38,24 @@ async function requireManager(): Promise<{ ok: true } | { ok: false; res: NextRe
       res: NextResponse.json({ success: false, error: "Not authorized." }, { status: 403 }),
     };
   }
-  return { ok: true };
+  if (!user.orgId) {
+    return {
+      ok: false,
+      res: NextResponse.json(
+        { success: false, error: "No organization context." },
+        { status: 403 }
+      ),
+    };
+  }
+  return { ok: true, user: { ...user, orgId: user.orgId } };
 }
 
-// GET - list all drivers (active + inactive) + who is on shift now.
+// GET - list drivers in this org (active + inactive) + who is on shift now.
 export async function GET() {
   const gate = await requireManager();
   if (!gate.ok) return gate.res;
+  const { orgId } = gate.user;
+
   try {
     const { rows: drivers } = await sql`
       SELECT drivers.id,
@@ -43,6 +64,7 @@ export async function GET() {
              companies.slug AS company
       FROM drivers
       JOIN companies ON companies.id = drivers.company_id
+      WHERE companies.org_id = ${orgId}
       ORDER BY drivers.active DESC, drivers.name;
     `;
 
@@ -50,8 +72,11 @@ export async function GET() {
     const { rows: onShift } = await sql`
       SELECT truck_shifts.driver_id, trucks.truck_number
       FROM truck_shifts
-      JOIN trucks ON trucks.id = truck_shifts.truck_id
-      WHERE truck_shifts.ended_at IS NULL;
+      JOIN drivers   ON drivers.id = truck_shifts.driver_id
+      JOIN companies ON companies.id = drivers.company_id
+      JOIN trucks    ON trucks.id = truck_shifts.truck_id
+      WHERE truck_shifts.ended_at IS NULL
+        AND companies.org_id = ${orgId};
     `;
     const shiftMap: Record<string, string> = {};
     for (const s of onShift) shiftMap[s.driver_id] = s.truck_number;
@@ -74,6 +99,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const gate = await requireManager();
   if (!gate.ok) return gate.res;
+  const { orgId } = gate.user;
+
   try {
     const body = await req.json().catch(() => ({}));
 
@@ -86,8 +113,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Slugs are NOT unique across orgs - must filter by org_id.
     const { rows: companyRows } = await sql`
-      SELECT id FROM companies WHERE slug = ${company} LIMIT 1;
+      SELECT id FROM companies
+      WHERE slug = ${company} AND org_id = ${orgId}
+      LIMIT 1;
     `;
     const companyId = companyRows[0]?.id;
     if (!companyId) {
@@ -117,6 +147,13 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const gate = await requireManager();
   if (!gate.ok) return gate.res;
+  const { orgId } = gate.user;
+
+  const NOT_FOUND = NextResponse.json(
+    { success: false, error: "Driver not found." },
+    { status: 404 }
+  );
+
   try {
     const body = await req.json().catch(() => ({}));
 
@@ -129,6 +166,16 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
+    // The driver must live in a company inside the caller's org.
+    const { rows: ownRows } = await sql`
+      SELECT drivers.id
+      FROM drivers
+      JOIN companies ON companies.id = drivers.company_id
+      WHERE drivers.id = ${driverId} AND companies.org_id = ${orgId}
+      LIMIT 1;
+    `;
+    if (ownRows.length === 0) return NOT_FOUND;
+
     if (action === "edit") {
       const name = (body.name as string | undefined)?.trim();
       const company = (body.company as string | undefined)?.trim();
@@ -138,8 +185,11 @@ export async function PATCH(req: NextRequest) {
           { status: 400 }
         );
       }
+      // Destination company must also be inside this org.
       const { rows: companyRows } = await sql`
-        SELECT id FROM companies WHERE slug = ${company} LIMIT 1;
+        SELECT id FROM companies
+        WHERE slug = ${company} AND org_id = ${orgId}
+        LIMIT 1;
       `;
       const companyId = companyRows[0]?.id;
       if (!companyId) {
@@ -161,6 +211,7 @@ export async function PATCH(req: NextRequest) {
         WHERE id = ${driverId}
         RETURNING active;
       `;
+      if (rows.length === 0) return NOT_FOUND;
       const nowActive = rows[0]?.active;
       return NextResponse.json({
         success: true,
@@ -171,9 +222,12 @@ export async function PATCH(req: NextRequest) {
 
     if (action === "resetPin") {
       const pinHash = hashPin("0000");
-      await sql`
-        UPDATE drivers SET pin_hash = ${pinHash} WHERE id = ${driverId};
+      const { rows } = await sql`
+        UPDATE drivers SET pin_hash = ${pinHash}
+        WHERE id = ${driverId}
+        RETURNING id;
       `;
+      if (rows.length === 0) return NOT_FOUND;
       return NextResponse.json({
         success: true,
         message: "PIN reset to 0000 - driver sets a new one at next login",
