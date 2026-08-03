@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type Driver = { id: string; name: string; company: string };
+type Driver = { id: string; name: string; company_name?: string };
 type Step = "loading" | "pick" | "pin" | "setpin" | "done";
 
 export default function DriverLogin() {
@@ -14,8 +14,8 @@ export default function DriverLogin() {
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [companyName, setCompanyName] = useState("");
-  const [companySlug, setCompanySlug] = useState("");
+  const [orgName, setOrgName] = useState("");
+  const [orgSlug, setOrgSlug] = useState("");
   const [codeInput, setCodeInput] = useState("");
 
   // Load the driver list for the name picker, scoped to one company.
@@ -26,15 +26,15 @@ export default function DriverLogin() {
       setStep("pick");
       return;
     }
-    fetch(`/api/auth-driver/list?company=${encodeURIComponent(slug)}`)
+    fetch(`/api/auth-driver/list?org=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
           setDrivers(data.drivers);
-          setCompanyName(data.company?.name || "");
-          setCompanySlug(data.company?.slug || slug);
+          setOrgName(data.org?.name || "");
+          setOrgSlug(data.org?.slug || slug);
           try {
-            window.localStorage.setItem("driver_company", data.company?.slug || slug);
+            window.localStorage.setItem("driver_org", data.org?.slug || slug);
           } catch {
             // Private browsing - the slug just won't persist.
           }
@@ -52,16 +52,16 @@ export default function DriverLogin() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let slug = (params.get("c") || params.get("company") || "").trim();
+    let slug = (params.get("o") || params.get("org") || params.get("c") || "").trim();
     if (!slug) {
       try {
-        slug = window.localStorage.getItem("driver_company") || "";
+        slug = window.localStorage.getItem("driver_org") || "";
       } catch {
         slug = "";
       }
     }
     if (slug) {
-      setCompanySlug(slug);
+      setOrgSlug(slug);
       loadDrivers(slug);
     } else {
       setStep("pick");
@@ -197,10 +197,10 @@ export default function DriverLogin() {
       <div style={wrap}>
         <div style={card}>
           <h1 style={{ fontSize: 22, marginBottom: 4 }}>
-            {companyName ? `${companyName} Drivers` : "Driver Login"}
+            {orgName ? `${orgName} Drivers` : "Driver Login"}
           </h1>
           <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
-            {companySlug ? "Tap your name" : "Enter your company code to continue"}
+            {orgSlug ? "Tap your name" : "Enter your company code to continue"}
           </p>
           {error && (
             <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
@@ -208,12 +208,12 @@ export default function DriverLogin() {
 
           {/* No company in the URL: ask for the code instead of listing
               every driver on the platform. */}
-          {!companySlug ? (
+          {!orgSlug ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <input
                 value={codeInput}
                 onChange={(e) => setCodeInput(e.target.value)}
-                placeholder="Company code (e.g. phx)"
+                placeholder="Company code (e.g. duggers)"
                 autoCapitalize="none"
                 autoCorrect="off"
                 style={{
@@ -231,7 +231,7 @@ export default function DriverLogin() {
                   if (!slug) return;
                   setError("");
                   setStep("loading");
-                  setCompanySlug(slug);
+                  setOrgSlug(slug);
                   loadDrivers(slug);
                 }}
                 style={{
@@ -269,6 +269,11 @@ export default function DriverLogin() {
                 }}
               >
                 {d.name}
+                {d.company_name ? (
+                  <span style={{ display: "block", fontSize: 12, color: "#64748b", marginTop: 2 }}>
+                    {d.company_name}
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
