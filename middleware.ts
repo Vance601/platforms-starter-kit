@@ -8,6 +8,7 @@ const PUBLIC_ROUTES = [
   "/api/auth-manager",
   "/driver",
   "/api/auth-driver",
+  "/d/", // customer driver entry point: /d/<company>
 ];
 
 const SIGNED_IN_ALLOWED = ["/onboarding", "/pending", "/api/signup"];
