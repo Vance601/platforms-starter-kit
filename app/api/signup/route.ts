@@ -29,6 +29,56 @@ function slugify(input: string): string {
     .slice(0, 50) || "org";
 }
 
+// Reserved because they would collide with real paths, or are confusing as a
+// customer identifier in a URL.
+const RESERVED_SLUGS = new Set([
+  "admin", "api", "app", "d", "driver", "drivers", "login", "logout",
+  "manager", "onboarding", "pending", "settings", "signup", "support",
+  "team", "www", "new", "null", "undefined",
+]);
+
+// Take the clean slug when it is free, and only add -2, -3 ... on an actual
+// collision. The old scheme always appended 6 characters of the UUID, which
+// produced links like /d/swift-towing-4b2e91/driver - hard to read out over
+// the radio and hard to type on a phone.
+//
+// `table` is a fixed string chosen by the caller below, never user input.
+async function uniqueSlug(
+  base: string,
+  table: "organizations" | "companies" | "locations"
+): Promise<string> {
+  let candidate = base;
+  if (RESERVED_SLUGS.has(candidate)) candidate = `${base}-1`;
+
+  for (let attempt = 0; attempt < 25; attempt++) {
+    let taken = false;
+
+    if (table === "organizations") {
+      const { rows } = await sql`
+        SELECT 1 FROM organizations WHERE lower(slug) = ${candidate} LIMIT 1;
+      `;
+      taken = rows.length > 0;
+    } else if (table === "companies") {
+      const { rows } = await sql`
+        SELECT 1 FROM companies WHERE lower(slug) = ${candidate} LIMIT 1;
+      `;
+      taken = rows.length > 0;
+    } else {
+      const { rows } = await sql`
+        SELECT 1 FROM locations WHERE lower(slug) = ${candidate} LIMIT 1;
+      `;
+      taken = rows.length > 0;
+    }
+
+    if (!taken) return candidate;
+    candidate = `${base}-${attempt + 2}`;
+  }
+
+  // 25 collisions on one name is implausible - fall back to a unique suffix
+  // rather than looping forever.
+  return `${base}-${crypto.randomUUID().slice(0, 6)}`;
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) {
@@ -107,7 +157,7 @@ export async function POST(req: NextRequest) {
   try {
     // 1. Organization. plan/status/created_at/supplier_name all default.
     const orgId = crypto.randomUUID();
-    const orgSlug = `${slugify(orgName)}-${orgId.slice(0, 6)}`;
+    const orgSlug = await uniqueSlug(slugify(orgName), "organizations");
     await sql`
       INSERT INTO organizations (id, name, slug)
       VALUES (${orgId}, ${orgName}, ${orgSlug});
@@ -115,7 +165,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Company under the new org.
     const companyId = crypto.randomUUID();
-    const companySlug = `${slugify(companyName)}-${companyId.slice(0, 6)}`;
+    const companySlug = await uniqueSlug(slugify(companyName), "companies");
     await sql`
       INSERT INTO companies (id, org_id, slug, name, legal_entity, active)
       VALUES (${companyId}, ${orgId}, ${companySlug}, ${companyName}, ${legalEntity}, true);
@@ -123,7 +173,7 @@ export async function POST(req: NextRequest) {
 
     // 3. First location under the company.
     const locationId = crypto.randomUUID();
-    const locationSlug = `${slugify(locationName)}-${locationId.slice(0, 6)}`;
+    const locationSlug = await uniqueSlug(slugify(locationName), "locations");
     await sql`
       INSERT INTO locations (id, company_id, slug, name, city, state, active)
       VALUES (${locationId}, ${companyId}, ${locationSlug}, ${locationName}, ${city}, ${state}, true);
