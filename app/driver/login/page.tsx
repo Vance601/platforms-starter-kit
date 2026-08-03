@@ -14,14 +14,30 @@ export default function DriverLogin() {
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [companySlug, setCompanySlug] = useState("");
+  const [codeInput, setCodeInput] = useState("");
 
-  // Load the driver list for the name picker.
-  useEffect(() => {
-    fetch("/api/auth-driver/list")
+  // Load the driver list for the name picker, scoped to one company.
+  // The slug comes from ?c= (set by /d/<company>) and is remembered on the
+  // device so a bookmarked /driver/login keeps working for that customer.
+  function loadDrivers(slug: string) {
+    if (!slug) {
+      setStep("pick");
+      return;
+    }
+    fetch(`/api/auth-driver/list?company=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
           setDrivers(data.drivers);
+          setCompanyName(data.company?.name || "");
+          setCompanySlug(data.company?.slug || slug);
+          try {
+            window.localStorage.setItem("driver_company", data.company?.slug || slug);
+          } catch {
+            // Private browsing - the slug just won't persist.
+          }
           setStep("pick");
         } else {
           setError(data.error || "Could not load drivers");
@@ -32,6 +48,25 @@ export default function DriverLogin() {
         setError("Could not load drivers");
         setStep("pick");
       });
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let slug = (params.get("c") || params.get("company") || "").trim();
+    if (!slug) {
+      try {
+        slug = window.localStorage.getItem("driver_company") || "";
+      } catch {
+        slug = "";
+      }
+    }
+    if (slug) {
+      setCompanySlug(slug);
+      loadDrivers(slug);
+    } else {
+      setStep("pick");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function pickDriver(d: Driver) {
@@ -161,13 +196,62 @@ export default function DriverLogin() {
     return (
       <div style={wrap}>
         <div style={card}>
-          <h1 style={{ fontSize: 22, marginBottom: 4 }}>Driver Login</h1>
+          <h1 style={{ fontSize: 22, marginBottom: 4 }}>
+            {companyName ? `${companyName} Drivers` : "Driver Login"}
+          </h1>
           <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
-            Tap your name
+            {companySlug ? "Tap your name" : "Enter your company code to continue"}
           </p>
           {error && (
             <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
           )}
+
+          {/* No company in the URL: ask for the code instead of listing
+              every driver on the platform. */}
+          {!companySlug ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <input
+                value={codeInput}
+                onChange={(e) => setCodeInput(e.target.value)}
+                placeholder="Company code (e.g. phx)"
+                autoCapitalize="none"
+                autoCorrect="off"
+                style={{
+                  padding: "14px 16px",
+                  fontSize: 18,
+                  borderRadius: 12,
+                  border: "1px solid #334155",
+                  background: "#0f172a",
+                  color: "#f8fafc",
+                }}
+              />
+              <button
+                onClick={() => {
+                  const slug = codeInput.trim().toLowerCase();
+                  if (!slug) return;
+                  setError("");
+                  setStep("loading");
+                  setCompanySlug(slug);
+                  loadDrivers(slug);
+                }}
+                style={{
+                  padding: "14px 16px",
+                  fontSize: 18,
+                  fontWeight: 600,
+                  borderRadius: 12,
+                  border: "none",
+                  background: "#2563eb",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                }}
+              >
+                Continue
+              </button>
+              <p style={{ color: "#64748b", fontSize: 12 }}>
+                Your dispatcher can give you the direct link so you only do this once.
+              </p>
+            </div>
+          ) : null}
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {drivers.map((d) => (
               <button
