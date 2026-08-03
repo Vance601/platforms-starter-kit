@@ -373,7 +373,7 @@ export default function DriverSellPage() {
                       type="text"
                       value={warrantyNote}
                       onChange={(e) => setWarrantyNote(e.target.value)}
-                      placeholder="Note: old battery info (barcode, date, etc.)"
+                      placeholder="Required: old battery info (barcode, date, etc.)"
                       className="w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-600 focus:border-blue-500 focus:outline-none"
                     />
                   ) : null}
@@ -402,8 +402,10 @@ export default function DriverSellPage() {
                 ? "Select a battery first"
                 : !callNumber.trim()
                 ? "Enter a call number"
-                : !warrantyOk
+                : isWarranty && replacesId === ""
                 ? "Pick the failed battery"
+                : isWarranty && replacesId === "OTHER" && !warrantyNote.trim()
+                ? "Add a note about the old battery"
                 : isWarranty
                 ? "Record Warranty (FREE)"
                 : "Record Sale"}
