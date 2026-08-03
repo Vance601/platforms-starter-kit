@@ -12,10 +12,15 @@ const PUBLIC_ROUTES = [
 
 const SIGNED_IN_ALLOWED = ["/onboarding", "/pending", "/api/signup"];
 
-function hasValidManagerSession(
-  req: Request & { cookies: { get: (n: string) => { value: string } | undefined } }
-): boolean {
-  const cookie = req.cookies.get("manager_session");
+type ReqWithCookies = Request & {
+  cookies: { get: (n: string) => { value: string } | undefined };
+};
+
+// Cheap validity check only: 3 parts and not expired. The signature is verified
+// inside each route with the server secret - middleware runs on the edge and
+// only decides whether a request is worth passing through.
+function hasValidSessionCookie(req: ReqWithCookies, name: string): boolean {
+  const cookie = req.cookies.get(name);
   if (!cookie?.value) return false;
   const parts = cookie.value.split(".");
   if (parts.length !== 3) return false;
@@ -31,7 +36,20 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
-  const signedIn = Boolean(req.auth) || hasValidManagerSession(req);
+  const r = req as unknown as ReqWithCookies;
+
+  // Three session types, not two. Drivers sign in with a PIN and carry
+  // driver_session - they have neither a NextAuth session nor manager_session.
+  // Without this, every API the driver app calls (/api/driver/trucks,
+  // /api/transfer, /api/battery/sellable, /api/battery/loadable,
+  // /api/battery/sell, /api/battery/return-core, /api/battery/sold-list)
+  // was redirected to /login. The page then parsed an HTML login page as JSON
+  // and reported a generic load failure. It only appeared to work for the
+  // owner, whose browser also holds a GitHub session.
+  const signedIn =
+    Boolean(req.auth) ||
+    hasValidSessionCookie(r, "manager_session") ||
+    hasValidSessionCookie(r, "driver_session");
 
   if (signedIn && SIGNED_IN_ALLOWED.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
