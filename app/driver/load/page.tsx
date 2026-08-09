@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DriverNav from "@/components/driver-nav";
+import { BarcodeReader } from "@/components/barcode-reader";
 
 type Battery = {
   id: string;
@@ -37,6 +38,44 @@ export default function DriverLoadPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Last scan result. highlightId drives the visual pulse on the matched row;
+  // scanMsg reports a barcode that is not in this warehouse list.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+
+  // Highlight-and-tap: a scan selects the matching battery and scrolls to it,
+  // but never submits. The driver still presses Load to commit.
+  function handleScan(code: string) {
+    const needle = code.trim().toLowerCase();
+    const match = batteries.find(
+      (b) =>
+        b.barcode?.trim().toLowerCase() === needle ||
+        b.serial_number?.trim().toLowerCase() === needle
+    );
+
+    if (!match) {
+      setHighlightId(null);
+      setScanMsg(`${code} is not in the warehouse list. Already on a truck, sold, or a different location.`);
+      return;
+    }
+
+    setScanMsg(null);
+    setHighlightId(match.id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.add(match.id);
+      return next;
+    });
+
+    // Bring the matched row into view on a long list.
+    setTimeout(() => {
+      document.getElementById(`bat-${match.id}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 50);
+  }
 
   async function loadData() {
     setLoading(true);
@@ -196,18 +235,32 @@ export default function DriverLoadPage() {
               </p>
             ) : (
               <div className="space-y-2">
+                <BarcodeReader onScan={handleScan} label="Scan a battery label" />
+
+                {scanMsg ? (
+                  <div className="rounded-lg border border-amber-600 bg-amber-950/30 px-4 py-3 text-sm text-amber-300">
+                    {scanMsg}
+                  </div>
+                ) : null}
+
                 <p className="text-sm text-slate-400">
-                  Tap batteries to select (you can pick several), then press Load.
+                  Scan or tap batteries to select (you can pick several), then press Load.
                 </p>
                 {batteries.map((b) => {
                   const isSelected = selectedIds.has(b.id);
                   return (
                     <button
                       key={b.id}
-                      onClick={() => toggleSelect(b.id)}
+                      id={`bat-${b.id}`}
+                      onClick={() => {
+                        setHighlightId(null);
+                        toggleSelect(b.id);
+                      }}
                       className={
                         "w-full rounded-lg border px-4 py-3 text-left transition flex items-center justify-between " +
-                        (isSelected
+                        (b.id === highlightId
+                          ? "border-green-400 bg-green-950/40 ring-2 ring-green-400"
+                          : isSelected
                           ? "border-blue-500 bg-blue-950/40"
                           : "border-slate-700 bg-slate-800/40")
                       }
@@ -220,7 +273,9 @@ export default function DriverLoadPage() {
                           </span>
                         ) : null}
                       </span>
-                      {isSelected ? (
+                      {b.id === highlightId ? (
+                        <span className="text-xs font-semibold text-green-400">SCANNED ✓</span>
+                      ) : isSelected ? (
                         <span className="text-blue-400 text-lg font-bold">✓</span>
                       ) : null}
                     </button>
