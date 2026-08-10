@@ -200,6 +200,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               Print Labels
             </Link>
           </Button>
+          <Button variant={pathname === "/truck-labels" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/truck-labels">
+              <Truck className="mr-2 h-4 w-4" />
+              Truck QR Codes
+            </Link>
+          </Button>
         </div>
         <div className="px-3 py-1">
           <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Settings</h2>
