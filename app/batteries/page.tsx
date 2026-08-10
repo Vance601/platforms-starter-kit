@@ -15,8 +15,21 @@ type Battery = {
   locationSlug: string;
   companyName: string;
   companySlug: string;
+  truckId: string | null;
+  truckNumber: string | null;
+  truckDriverName: string | null;
   sourceInvoice: string | null;
 };
+
+type TruckSummary = {
+  id: string;
+  truckNumber: string;
+  driverName: string | null;
+  companyName: string;
+  count: number;
+};
+
+type StatusSummary = { status: string; count: number };
 
 type LocationSummary = {
   id: string;
@@ -35,6 +48,8 @@ export default function BatteriesPage() {
   const [batteries, setBatteries] = useState<Battery[]>([]);
   const [byLocation, setByLocation] = useState<LocationSummary[]>([]);
   const [byClassification, setByClassification] = useState<ClassificationSummary[]>([]);
+  const [byTruck, setByTruck] = useState<TruckSummary[]>([]);
+  const [byStatus, setByStatus] = useState<StatusSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -43,6 +58,7 @@ export default function BatteriesPage() {
   const [modelFilter, setModelFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [searchBarcode, setSearchBarcode] = useState("");
+  const [truckFilter, setTruckFilter] = useState("");
 
   useEffect(() => {
     fetch("/api/batteries")
@@ -51,6 +67,8 @@ export default function BatteriesPage() {
         setBatteries(data.batteries || []);
         setByLocation(data.byLocation || []);
         setByClassification(data.byClassification || []);
+        setByTruck(data.byTruck || []);
+        setByStatus(data.byStatus || []);
         setIsLoading(false);
       })
       .catch(() => {
@@ -62,11 +80,69 @@ export default function BatteriesPage() {
   const uniqueModels = Array.from(new Set(batteries.map(b => b.model).filter(Boolean))) as string[];
   uniqueModels.sort();
 
+  // Print QR labels for whatever is currently filtered. Previously labels could
+  // only be printed at the moment of receiving, so a lost or damaged label meant
+  // the battery could never be relabelled.
+  function printLabels() {
+    const rows = filteredBatteries;
+    if (rows.length === 0) return;
+
+    const cells = rows
+      .map(b => {
+        const url =
+          "https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=" +
+          encodeURIComponent(b.barcode);
+        const model = (b.modelDisplay || b.model || "").toString();
+        return `
+          <div class="label">
+            <img src="${url}" alt="" />
+            <div class="text">
+              <div class="bc">${b.barcode}</div>
+              <div class="md">${model ? "Model " + model : ""}</div>
+            </div>
+          </div>`;
+      })
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html><head><title>Battery Labels</title>
+<style>
+  @page { size: 2in 1in; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Arial, sans-serif; }
+  .label {
+    width: 2in; height: 1in; padding: 0.06in;
+    display: flex; align-items: center; gap: 0.06in;
+    page-break-after: always; break-after: page; overflow: hidden;
+  }
+  .label img { width: 0.85in; height: 0.85in; }
+  .text { flex: 1; min-width: 0; }
+  .bc { font-family: monospace; font-size: 7.5pt; word-break: break-all; line-height: 1.15; }
+  .md { font-size: 7pt; color: #333; margin-top: 2px; }
+  @media screen {
+    body { background: #f3f4f6; padding: 12px; }
+    .label { background: #fff; border: 1px solid #ccc; margin-bottom: 8px; }
+  }
+</style></head>
+<body>${cells}</body></html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("Allow pop-ups for this site to print labels.");
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    // Give the QR images a moment to load before the print dialog opens.
+    setTimeout(() => w.print(), 900);
+  }
+
   const filteredBatteries = batteries.filter(b => {
     if (locationFilter && b.locationSlug !== locationFilter) return false;
     if (classificationFilter && b.classification !== classificationFilter) return false;
     if (modelFilter && b.model !== modelFilter) return false;
     if (statusFilter && b.status !== statusFilter) return false;
+    if (truckFilter && b.truckId !== truckFilter) return false;
     if (searchBarcode && !b.barcode.toLowerCase().includes(searchBarcode.toLowerCase())) return false;
     return true;
   });
@@ -123,6 +199,56 @@ export default function BatteriesPage() {
           </div>
         ))}
       </div>
+
+      <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>
+        On Trucks
+        {truckFilter && (
+          <button
+            onClick={() => setTruckFilter("")}
+            style={{ marginLeft: 12, fontSize: 12, fontWeight: 400, padding: "4px 10px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+          >
+            Clear truck filter
+          </button>
+        )}
+      </h3>
+      {byTruck.filter(t => t.count > 0).length === 0 ? (
+        <div style={{ padding: "16px", border: "1px dashed #ddd", borderRadius: 4, color: "#888", fontSize: 13, marginBottom: 24 }}>
+          No batteries are on trucks right now.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
+          {byTruck.filter(t => t.count > 0).map(t => {
+            const active = truckFilter === t.id;
+            return (
+              <div
+                key={t.id}
+                onClick={() => setTruckFilter(active ? "" : t.id)}
+                style={{
+                  padding: "16px",
+                  border: active ? "2px solid #2563eb" : "1px solid #ddd",
+                  borderRadius: "4px",
+                  background: active ? "#eff6ff" : "#fafafa",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                  Truck #{t.truckNumber}
+                </div>
+                <div style={{ fontSize: "28px", fontWeight: 600 }}>{t.count}</div>
+                <div style={{ fontSize: "12px", color: "#999" }}>
+                  {t.driverName || "Unassigned"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {byStatus.length > 0 && (
+        <div style={{ fontSize: 13, color: "#666", marginBottom: 24 }}>
+          {byStatus.map(s2 => `${s2.count} ${s2.status.replace(/_/g, " ")}`).join("  ·  ")}
+        </div>
+      )}
 
       <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>By Classification</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
@@ -184,8 +310,26 @@ export default function BatteriesPage() {
         </div>
       </div>
 
-      <div style={{ marginBottom: "12px", fontSize: "13px", color: "#666" }}>
-        {isLoading ? "Loading..." : `Showing ${filteredBatteries.length} of ${batteries.length} batteries`}
+      <div style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ fontSize: "13px", color: "#666" }}>
+          {isLoading ? "Loading..." : `Showing ${filteredBatteries.length} of ${batteries.length} batteries`}
+        </div>
+        <button
+          onClick={printLabels}
+          disabled={filteredBatteries.length === 0}
+          style={{
+            padding: "8px 14px",
+            fontSize: 13,
+            fontWeight: 500,
+            borderRadius: 4,
+            border: "1px solid #2563eb",
+            background: filteredBatteries.length === 0 ? "#eee" : "#2563eb",
+            color: filteredBatteries.length === 0 ? "#999" : "#fff",
+            cursor: filteredBatteries.length === 0 ? "not-allowed" : "pointer",
+          }}
+        >
+          Print {filteredBatteries.length} label{filteredBatteries.length === 1 ? "" : "s"}
+        </button>
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
@@ -195,6 +339,7 @@ export default function BatteriesPage() {
             <th style={{ padding: "12px 8px", textAlign: "left" }}>Classification</th>
             <th style={{ padding: "12px 8px", textAlign: "left" }}>Model</th>
             <th style={{ padding: "12px 8px", textAlign: "left" }}>Location</th>
+            <th style={{ padding: "12px 8px", textAlign: "left" }}>Truck</th>
             <th style={{ padding: "12px 8px", textAlign: "left" }}>Status</th>
             <th style={{ padding: "12px 8px", textAlign: "right" }}>Cost</th>
             <th style={{ padding: "12px 8px", textAlign: "left" }}>Received</th>
@@ -211,6 +356,18 @@ export default function BatteriesPage() {
               <td style={{ padding: "12px 8px" }}>
                 <div>{b.locationName}</div>
                 <div style={{ fontSize: "12px", color: "#888" }}>{b.companyName}</div>
+              </td>
+              <td style={{ padding: "12px 8px" }}>
+                {b.truckNumber ? (
+                  <>
+                    <div style={{ fontWeight: 500 }}>#{b.truckNumber}</div>
+                    {b.truckDriverName ? (
+                      <div style={{ fontSize: "12px", color: "#888" }}>{b.truckDriverName}</div>
+                    ) : null}
+                  </>
+                ) : (
+                  <span style={{ color: "#ccc" }}>—</span>
+                )}
               </td>
               <td style={{ padding: "12px 8px" }}>{statusBadge(b.status)}</td>
               <td style={{ padding: "12px 8px", textAlign: "right" }}>${parseFloat(b.cost).toFixed(2)}</td>
