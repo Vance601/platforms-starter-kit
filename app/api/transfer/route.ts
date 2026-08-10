@@ -31,10 +31,54 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const truckId: string | undefined = body.truckId;
+    let truckId: string | undefined = body.truckId;
+    // Scanned windshield QR, e.g. "DG-TRUCK-125". The truck number is encoded
+    // rather than the UUID so it is human-readable off the sticker and can be
+    // typed if the label is damaged.
+    const truckCode: string | undefined = body.truckCode;
+    // The driver has seen who currently holds the truck and chose to take it.
+    const confirmTakeover: boolean = body.confirmTakeover === true;
+
+    // Which company this driver belongs to - a scanned code must resolve
+    // inside it, so a code from another customer cannot claim anything here.
+    const { rows: meRows } = await sql`
+      SELECT company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1;
+    `;
+    if (meRows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Driver not found or inactive. See a manager." },
+        { status: 404 }
+      );
+    }
+    const myCompanyId = meRows[0].company_id;
+
+    if (!truckId && truckCode) {
+      const num = String(truckCode)
+        .trim()
+        .toUpperCase()
+        .replace(/^DG-TRUCK-/, "")
+        .replace(/^TRUCK-/, "")
+        .replace(/^#/, "");
+
+      const { rows: found } = await sql`
+        SELECT id FROM trucks
+        WHERE upper(truck_number) = ${num}
+          AND company_id = ${myCompanyId}
+          AND active = TRUE
+        LIMIT 1;
+      `;
+      if (found.length === 0) {
+        return NextResponse.json(
+          { success: false, error: `No truck ${num} at your company.` },
+          { status: 404 }
+        );
+      }
+      truckId = found[0].id;
+    }
+
     if (!truckId) {
       return NextResponse.json(
-        { success: false, error: "truckId is required" },
+        { success: false, error: "truckId or truckCode is required" },
         { status: 400 }
       );
     }
