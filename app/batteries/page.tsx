@@ -50,6 +50,8 @@ export default function BatteriesPage() {
   const [byClassification, setByClassification] = useState<ClassificationSummary[]>([]);
   const [byTruck, setByTruck] = useState<TruckSummary[]>([]);
   const [byStatus, setByStatus] = useState<StatusSummary[]>([]);
+  // Every unit in the org, live or historical - used only for the footnote.
+  const [allCount, setAllCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -64,7 +66,14 @@ export default function BatteriesPage() {
     fetch("/api/batteries")
       .then(r => r.json())
       .then(data => {
-        setBatteries(data.batteries || []);
+        // This page is live inventory only: what is in a warehouse or on a
+        // truck right now. Sold units, returned cores, customer-kept cores and
+        // warranty units are history - they live on Battery Audit (/reconcile),
+        // which already tracks sold_at, call numbers and warranty flags.
+        const LIVE = new Set(["in_warehouse", "on_truck"]);
+        const all: Battery[] = data.batteries || [];
+        setBatteries(all.filter(b => LIVE.has(b.status)));
+        setAllCount(all.length);
         setByLocation(data.byLocation || []);
         setByClassification(data.byClassification || []);
         setByTruck(data.byTruck || []);
@@ -244,11 +253,30 @@ export default function BatteriesPage() {
         </div>
       )}
 
-      {byStatus.length > 0 && (
-        <div style={{ fontSize: 13, color: "#666", marginBottom: 24 }}>
-          {byStatus.map(s2 => `${s2.count} ${s2.status.replace(/_/g, " ")}`).join("  ·  ")}
-        </div>
-      )}
+      {byStatus.length > 0 && (() => {
+        const LIVE = new Set(["in_warehouse", "on_truck"]);
+        const live = byStatus.filter(s2 => LIVE.has(s2.status));
+        const history = byStatus.filter(s2 => !LIVE.has(s2.status));
+        const historyTotal = history.reduce((n, s2) => n + s2.count, 0);
+        return (
+          <div style={{ fontSize: 13, color: "#666", marginBottom: 24 }}>
+            <div>
+              {live.map(s2 => `${s2.count} ${s2.status.replace(/_/g, " ")}`).join("  ·  ")}
+              {live.length > 0 ? `  ·  ${batteries.length} total in stock` : null}
+            </div>
+            {historyTotal > 0 && (
+              <div style={{ marginTop: 4, color: "#888" }}>
+                {historyTotal} sold or core record{historyTotal === 1 ? "" : "s"} not shown here (
+                {history.map(s2 => `${s2.count} ${s2.status.replace(/_/g, " ")}`).join(", ")}
+                ) —{" "}
+                <a href="/reconcile" style={{ color: "#2563eb" }}>
+                  Battery Audit
+                </a>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>By Classification</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
@@ -312,7 +340,7 @@ export default function BatteriesPage() {
 
       <div style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ fontSize: "13px", color: "#666" }}>
-          {isLoading ? "Loading..." : `Showing ${filteredBatteries.length} of ${batteries.length} batteries`}
+          {isLoading ? "Loading..." : `Showing ${filteredBatteries.length} of ${batteries.length} in stock`}
         </div>
         <button
           onClick={printLabels}
