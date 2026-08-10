@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BarcodeReader } from "@/components/barcode-reader";
 import DriverNav from "@/components/driver-nav";
 
 type Truck = {
@@ -41,7 +42,72 @@ export default function TransferPage() {
     loadTrucks();
   }, []);
 
-  async function claimTruck(truck: Truck) {
+  // Set when the server reports the truck is already held. Holds everything
+  // needed to repeat the request with confirmTakeover once the driver agrees.
+  const [pending, setPending] = useState<{
+    truckId?: string;
+    truckCode?: string;
+    truckNumber: string;
+    heldBy: string;
+    batteryCount: number;
+  } | null>(null);
+
+  // Windshield QR, e.g. "DG-TRUCK-125". Sent as truckCode so the server
+  // resolves it inside this driver\'s company.
+  function handleScan(code: string) {
+    setError("");
+    setResult(null);
+    claim({ truckCode: code });
+  }
+
+  async function claim(args: {
+    truckId?: string;
+    truckCode?: string;
+    confirmTakeover?: boolean;
+  }) {
+    setClaiming(args.truckId || args.truckCode || "scan");
+    try {
+      const res = await fetch("/api/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args),
+      });
+      const data = await res.json();
+
+      if (res.status === 401) {
+        window.location.href = "/driver/login";
+        return;
+      }
+
+      // Already held by someone else - ask before ending their shift.
+      if (data.needsConfirmation) {
+        setPending({
+          truckId: args.truckId,
+          truckCode: args.truckCode,
+          truckNumber: data.truck?.truck_number || "",
+          heldBy: data.heldBy || "another driver",
+          batteryCount: data.batteryCount || 0,
+        });
+        setClaiming(null);
+        return;
+      }
+
+      if (!data.success) {
+        setError(data.error || "Could not claim truck");
+        setClaiming(null);
+        return;
+      }
+
+      setPending(null);
+      setResult(data.message);
+      await loadTrucks();
+    } catch {
+      setError("Network error - try again");
+    }
+    setClaiming(null);
+  }
+
+  async function claimTruckOld(truck: Truck) {
     setClaiming(truck.id);
     setResult(null);
     setError("");
@@ -69,6 +135,12 @@ export default function TransferPage() {
     setClaiming(null);
   }
 
+  function claimTruck(truck: Truck) {
+    setError("");
+    setResult(null);
+    claim({ truckId: truck.id });
+  }
+
   const wrap: React.CSSProperties = {
     minHeight: "100vh",
     background: "#0f172a",
@@ -84,8 +156,73 @@ export default function TransferPage() {
         <DriverNav />
         <h1 style={{ fontSize: 24, marginBottom: 4 }}>Claim a Truck</h1>
         <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
-          Tap the truck you&apos;re taking out.
+          Scan the truck&apos;s QR code, or tap it below.
         </p>
+
+        <div style={{ marginBottom: 16 }}>
+          <BarcodeReader onScan={handleScan} label="Scan truck QR code" />
+        </div>
+
+        {pending && (
+          <div
+            style={{
+              border: "1px solid #f59e0b",
+              background: "#78350f22",
+              borderRadius: 12,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+              Truck #{pending.truckNumber} is already out
+            </p>
+            <p style={{ fontSize: 14, color: "#fcd34d", marginBottom: 4 }}>
+              {pending.heldBy} currently has it.
+            </p>
+            <p style={{ fontSize: 13, color: "#94a3b8", marginBottom: 14 }}>
+              Taking it ends their shift and moves{" "}
+              {pending.batteryCount} batter{pending.batteryCount === 1 ? "y" : "ies"} onto your
+              account.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() =>
+                  claim({
+                    truckId: pending.truckId,
+                    truckCode: pending.truckCode,
+                    confirmTakeover: true,
+                  })
+                }
+                style={{
+                  flex: 1,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#f59e0b",
+                  color: "#1c1917",
+                  fontSize: 15,
+                  fontWeight: 700,
+                }}
+              >
+                Take Truck #{pending.truckNumber}
+              </button>
+              <button
+                onClick={() => setPending(null)}
+                style={{
+                  flex: 1,
+                  padding: "12px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #475569",
+                  background: "transparent",
+                  color: "#e2e8f0",
+                  fontSize: 15,
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {result && (
           <div
