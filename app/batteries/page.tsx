@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 type Battery = {
   id: string;
@@ -89,61 +90,19 @@ export default function BatteriesPage() {
   const uniqueModels = Array.from(new Set(batteries.map(b => b.model).filter(Boolean))) as string[];
   uniqueModels.sort();
 
-  // Print QR labels for whatever is currently filtered. Previously labels could
-  // only be printed at the moment of receiving, so a lost or damaged label meant
-  // the battery could never be relabelled.
+  // Labels are rendered in a hidden block on this page and revealed by the
+  // print stylesheet. The previous version opened a new window and pulled one
+  // QR image per battery from an external service - 94 network requests at
+  // once locked the browser up. QR codes are now generated locally with
+  // qrcode.react, so printing does no network work at all.
+  //
+  // The old sheet also set page-break-after on every label, which is why each
+  // one came out on its own page. They now tile across letter sheets.
+  const [labelCols, setLabelCols] = useState(3);
+
   function printLabels() {
-    const rows = filteredBatteries;
-    if (rows.length === 0) return;
-
-    const cells = rows
-      .map(b => {
-        const url =
-          "https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=" +
-          encodeURIComponent(b.barcode);
-        const model = (b.modelDisplay || b.model || "").toString();
-        return `
-          <div class="label">
-            <img src="${url}" alt="" />
-            <div class="text">
-              <div class="bc">${b.barcode}</div>
-              <div class="md">${model ? "Model " + model : ""}</div>
-            </div>
-          </div>`;
-      })
-      .join("");
-
-    const html = `<!DOCTYPE html>
-<html><head><title>Battery Labels</title>
-<style>
-  @page { size: 2in 1in; margin: 0; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, Segoe UI, Arial, sans-serif; }
-  .label {
-    width: 2in; height: 1in; padding: 0.06in;
-    display: flex; align-items: center; gap: 0.06in;
-    page-break-after: always; break-after: page; overflow: hidden;
-  }
-  .label img { width: 0.85in; height: 0.85in; }
-  .text { flex: 1; min-width: 0; }
-  .bc { font-family: monospace; font-size: 7.5pt; word-break: break-all; line-height: 1.15; }
-  .md { font-size: 7pt; color: #333; margin-top: 2px; }
-  @media screen {
-    body { background: #f3f4f6; padding: 12px; }
-    .label { background: #fff; border: 1px solid #ccc; margin-bottom: 8px; }
-  }
-</style></head>
-<body>${cells}</body></html>`;
-
-    const w = window.open("", "_blank");
-    if (!w) {
-      alert("Allow pop-ups for this site to print labels.");
-      return;
-    }
-    w.document.write(html);
-    w.document.close();
-    // Give the QR images a moment to load before the print dialog opens.
-    setTimeout(() => w.print(), 900);
+    if (filteredBatteries.length === 0) return;
+    window.print();
   }
 
   const filteredBatteries = batteries.filter(b => {
@@ -358,6 +317,17 @@ export default function BatteriesPage() {
         >
           Print {filteredBatteries.length} label{filteredBatteries.length === 1 ? "" : "s"}
         </button>
+        <label style={{ fontSize: 12, color: "#666", display: "flex", alignItems: "center", gap: 6 }}>
+          per row
+          <select
+            value={labelCols}
+            onChange={e => setLabelCols(Number(e.target.value))}
+            style={{ padding: "4px 6px", fontSize: 12 }}
+          >
+            <option value={3}>3 (0.5in margins)</option>
+            <option value={4}>4 (edge to edge)</option>
+          </select>
+        </label>
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
@@ -412,6 +382,58 @@ export default function BatteriesPage() {
           No batteries match your filters
         </div>
       )}
+
+      {/* Hidden on screen, shown only by the print stylesheet. */}
+      <style>{`
+        @media print {
+          @page { size: letter; margin: ${labelCols === 3 ? "0.5in" : "0"}; }
+          body * { visibility: hidden !important; }
+          #label-sheet, #label-sheet * { visibility: visible !important; }
+          #label-sheet {
+            display: grid !important;
+            grid-template-columns: repeat(${labelCols}, 2in);
+            position: absolute; left: 0; top: 0;
+          }
+        }
+      `}</style>
+
+      <div
+        id="label-sheet"
+        style={{ display: "none", gridTemplateColumns: `repeat(${labelCols}, 2in)` }}
+      >
+        {filteredBatteries.map(b => (
+          <div
+            key={`lbl-${b.id}`}
+            style={{
+              width: "2in",
+              height: "1in",
+              padding: "0.05in",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.06in",
+              overflow: "hidden",
+              boxSizing: "border-box",
+            }}
+          >
+            <QRCodeSVG value={b.barcode} size={82} level="M" />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: "7.5pt",
+                  lineHeight: 1.15,
+                  wordBreak: "break-all",
+                }}
+              >
+                {b.barcode}
+              </div>
+              <div style={{ fontSize: "7pt", color: "#333", marginTop: 2 }}>
+                {b.modelDisplay || b.model || ""}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
