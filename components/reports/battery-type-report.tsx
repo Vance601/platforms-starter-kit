@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { type SaleRecord, getSalesByBatteryType } from "@/lib/sales-data"
+import { type SaleRecord, getSalesByBatteryType } from "@/lib/sales-report"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Battery } from "lucide-react"
@@ -17,12 +17,11 @@ export function BatteryTypeReport({ sales }: BatteryTypeReportProps) {
   const totalCostOfGoods = Object.values(salesByType).reduce((sum, item) => sum + item.revenue, 0)
 
   // Prepare data for chart
-  const chartData = [
-    { name: "Alpha", quantity: salesByType.Alpha.quantity, costOfGoods: salesByType.Alpha.revenue },
-    { name: "Bravo", quantity: salesByType.Bravo.quantity, costOfGoods: salesByType.Bravo.revenue },
-    { name: "Charlie", quantity: salesByType.Charlie.quantity, costOfGoods: salesByType.Charlie.revenue },
-    { name: "AMG", quantity: salesByType.AMG.quantity, costOfGoods: salesByType.AMG.revenue },
-  ]
+  const chartData = Object.entries(salesByType).map(([name, d]) => ({
+    name,
+    quantity: d.quantity,
+    costOfGoods: d.revenue,
+  }))
 
   const getBatteryBadgeClass = (type: string) => {
     switch (type) {
@@ -30,10 +29,12 @@ export function BatteryTypeReport({ sales }: BatteryTypeReportProps) {
         return "bg-blue-50"
       case "Bravo":
         return "bg-green-50"
-      case "Charlie":
+      case "Prius":
         return "bg-amber-50"
-      case "AMG":
+      case "Tesla":
         return "bg-purple-50"
+      case "AGM":
+        return "bg-red-50"
       default:
         return ""
     }
@@ -61,20 +62,20 @@ export function BatteryTypeReport({ sales }: BatteryTypeReportProps) {
                   <span className="text-sm font-medium">${data.revenue.toLocaleString()}</span>
                 </div>
                 <Progress
-                  value={(data.quantity / totalQuantity) * 100}
+                  value={totalQuantity ? (data.quantity / totalQuantity) * 100 : 0}
                   className={
                     type === "Alpha"
                       ? "text-blue-500"
                       : type === "Bravo"
                         ? "text-green-500"
-                        : type === "Charlie"
+                        : type === "Prius"
                           ? "text-amber-500"
                           : "text-purple-500"
                   }
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{((data.quantity / totalQuantity) * 100).toFixed(1)}% of total units</span>
-                  <span>{((data.revenue / totalCostOfGoods) * 100).toFixed(1)}% of total cost of goods</span>
+                  <span>{(totalQuantity ? (data.quantity / totalQuantity) * 100 : 0).toFixed(1)}% of total units</span>
+                  <span>{(totalCostOfGoods ? (data.revenue / totalCostOfGoods) * 100 : 0).toFixed(1)}% of total cost of goods</span>
                 </div>
               </div>
             ))}

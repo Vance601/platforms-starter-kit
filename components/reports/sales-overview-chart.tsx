@@ -21,10 +21,11 @@ import { BarChart3Icon, LineChartIcon, Download, Calendar } from "lucide-react"
 
 // Simple, high-contrast color palette
 const COLORS = {
-  Alpha: "#2563eb", // Blue
-  Bravo: "#16a34a", // Green
-  Charlie: "#ca8a04", // Yellow
-  AMG: "#dc2626", // Red
+  AGM: "#dc2626",
+  Alpha: "#2563eb",
+  Bravo: "#16a34a",
+  Prius: "#d97706",
+  Tesla: "#7c3aed",
 }
 
 // Simple tooltip component

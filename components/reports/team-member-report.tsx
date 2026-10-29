@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { type SaleRecord, getSalesByTeamMember } from "@/lib/sales-data"
+import { type SaleRecord, getSalesByTeamMember } from "@/lib/sales-report"
 import { Progress } from "@/components/ui/progress"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
@@ -47,10 +47,10 @@ export function TeamMemberReport({ sales }: TeamMemberReportProps) {
                   </div>
                   <span className="text-sm font-medium">${member.revenue.toLocaleString()}</span>
                 </div>
-                <Progress value={(member.revenue / totalCostOfGoods) * 100} />
+                <Progress value={totalCostOfGoods ? (member.revenue / totalCostOfGoods) * 100 : 0} />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>{member.quantity} units sold</span>
-                  <span>{((member.revenue / totalCostOfGoods) * 100).toFixed(1)}% of total cost of goods</span>
+                  <span>{(totalCostOfGoods ? (member.revenue / totalCostOfGoods) * 100 : 0).toFixed(1)}% of total cost of goods</span>
                 </div>
               </div>
             ))}
