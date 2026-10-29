@@ -11,67 +11,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast"
 import { useAutoReorderManager } from "@/components/auto-reorder-manager"
 
-// Mock alerts data
-const mockAlerts = [
-  {
-    id: "alert-1",
-    type: "inventory",
-    severity: "critical",
-    item: "Alpha Batteries",
-    location: "Broadway",
-    threshold: 15,
-    current: 8,
-    date: "2023-04-01T10:30:00Z",
-    status: "active",
-  },
-  {
-    id: "alert-2",
-    type: "inventory",
-    severity: "warning",
-    item: "Bravo Batteries",
-    location: "Camelback",
-    threshold: 20,
-    current: 12,
-    date: "2023-04-02T14:15:00Z",
-    status: "active",
-  },
-  {
-    id: "alert-3",
-    type: "core-return",
-    severity: "critical",
-    item: "Missing Core Returns",
-    location: "Broadway",
-    count: 12,
-    date: "2023-04-03T09:45:00Z",
-    status: "active",
-  },
-  {
-    id: "alert-4",
-    type: "inventory",
-    severity: "critical",
-    item: "Charlie Batteries",
-    location: "Broadway",
-    threshold: 12,
-    current: 5,
-    date: "2023-04-04T16:20:00Z",
-    status: "active",
-  },
-  {
-    id: "alert-5",
-    type: "inventory",
-    severity: "warning",
-    item: "AMG Batteries",
-    location: "Camelback",
-    threshold: 8,
-    current: 6,
-    date: "2023-04-05T11:10:00Z",
-    status: "active",
-  },
-]
+// Alerts are derived server-side from live data (see app/api/alerts/route.ts).
+// Resolutions are persisted in localStorage keyed by alert id + signature, so a
+// resolved alert stays resolved across reloads until its numbers change.
+const RESOLVED_KEY = "duggers.alerts.resolved.v1"
+
+type AlertRow = Record<string, any> & { id: string; signature: string; status: "active" | "resolved" }
+
+function loadResolved(): Record<string, string> {
+  if (typeof window === "undefined") return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(RESOLVED_KEY) || "{}")
+  } catch {
+    return {}
+  }
+}
+
+function saveResolved(map: Record<string, string>) {
+  try {
+    window.localStorage.setItem(RESOLVED_KEY, JSON.stringify(map))
+  } catch {}
+}
 
 export default function AlertsPage() {
-  const [alerts, setAlerts] = useState(mockAlerts)
-  const [filteredAlerts, setFilteredAlerts] = useState(mockAlerts)
+  const [alerts, setAlerts] = useState<AlertRow[]>([])
+  const [filteredAlerts, setFilteredAlerts] = useState<AlertRow[]>([])
+  const [locations, setLocations] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [locationFilter, setLocationFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
   const [severityFilter, setSeverityFilter] = useState("all")
@@ -80,6 +47,27 @@ export default function AlertsPage() {
   const [activeTab, setActiveTab] = useState("all")
   const { toast } = useToast()
   const autoReorderManager = useAutoReorderManager()
+
+  useEffect(() => {
+    fetch("/api/alerts")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.error) throw new Error(j.error)
+        const resolved = loadResolved()
+        // Drop stale resolutions whose alert no longer exists or whose numbers changed.
+        const live: Record<string, string> = {}
+        const rows: AlertRow[] = (j.alerts ?? []).map((a: any) => {
+          const isResolved = resolved[a.id] === a.signature
+          if (isResolved) live[a.id] = a.signature
+          return { ...a, status: isResolved ? "resolved" : "active" }
+        })
+        saveResolved(live)
+        setAlerts(rows)
+        setLocations(j.locations ?? [])
+      })
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Could not load alerts"))
+      .finally(() => setLoading(false))
+  }, [])
 
   // Apply filters and sorting
   useEffect(() => {
@@ -185,6 +173,9 @@ export default function AlertsPage() {
     }
 
     // Mark alert as resolved
+    const resolved = loadResolved()
+    resolved[alertToResolve.id] = alertToResolve.signature
+    saveResolved(resolved)
     setAlerts((prev) => prev.map((alert) => (alert.id === alertId ? { ...alert, status: "resolved" } : alert)))
 
     toast({
@@ -202,6 +193,9 @@ export default function AlertsPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-3xl font-bold">Alerts & Notifications</h1>
       </div>
+
+      {loading && <p className="text-sm text-muted-foreground mb-4">Loading alerts…</p>}
+      {loadError && <p className="text-sm text-red-600 mb-4">{loadError}</p>}
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -225,8 +219,9 @@ export default function AlertsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Locations</SelectItem>
-                <SelectItem value="Broadway">Broadway</SelectItem>
-                <SelectItem value="Camelback">Camelback</SelectItem>
+                {locations.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
