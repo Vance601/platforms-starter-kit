@@ -1,7 +1,7 @@
 "use client"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { type SaleRecord, getSalesByLocation, getSalesByBatteryType } from "@/lib/sales-data"
+import { type SaleRecord, getSalesByLocation, getSalesByBatteryType } from "@/lib/sales-report"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Building2 } from "lucide-react"
@@ -11,54 +11,32 @@ interface LocationReportProps {
   sales: SaleRecord[]
 }
 
+const COLORS = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777"]
+
+// Locations come from the sales themselves (real DB locations), not a
+// hardcoded Broadway/Camelback pair.
 export function LocationReport({ sales }: LocationReportProps) {
   const salesByLocation = getSalesByLocation(sales)
-  const totalCostOfGoods = Object.values(salesByLocation).reduce((sum, item) => sum + item.revenue, 0)
-
-  // Get Broadway sales by battery type
-  const broadwaySales = sales.filter((sale) => sale.location === "Broadway")
-  const broadwaySalesByType = getSalesByBatteryType(broadwaySales)
-
-  // Get Camelback sales by battery type
-  const camelbackSales = sales.filter((sale) => sale.location === "Camelback")
-  const camelbackSalesByType = getSalesByBatteryType(camelbackSales)
-
-  // Prepare data for pie charts
-  const locationPieData = [
-    { name: "Broadway", value: salesByLocation.Broadway.revenue },
-    { name: "Camelback", value: salesByLocation.Camelback.revenue },
-  ]
-
-  const broadwayPieData = [
-    { name: "Alpha", value: broadwaySalesByType.Alpha.revenue },
-    { name: "Bravo", value: broadwaySalesByType.Bravo.revenue },
-    { name: "Charlie", value: broadwaySalesByType.Charlie.revenue },
-    { name: "AMG", value: broadwaySalesByType.AMG.revenue },
-  ]
-
-  const camelbackPieData = [
-    { name: "Alpha", value: camelbackSalesByType.Alpha.revenue },
-    { name: "Bravo", value: camelbackSalesByType.Bravo.revenue },
-    { name: "Charlie", value: camelbackSalesByType.Charlie.revenue },
-    { name: "AMG", value: camelbackSalesByType.AMG.revenue },
-  ]
-
-  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"]
+  const totalUnits = Object.values(salesByLocation).reduce((sum, item) => sum + item.quantity, 0)
+  const locationPieData = Object.entries(salesByLocation).map(([name, d]) => ({ name, value: d.quantity }))
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Sales by Location</CardTitle>
-          <CardDescription>Revenue breakdown by location</CardDescription>
+          <CardDescription>Units sold per location</CardDescription>
         </CardHeader>
         <CardContent>
+          {locationPieData.length === 0 && (
+            <p className="text-sm text-muted-foreground">No sales in this period.</p>
+          )}
           <div className="space-y-6">
             {Object.entries(salesByLocation).map(([location, data]) => (
               <div key={location} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={location === "Broadway" ? "bg-blue-50" : "bg-green-50"}>
+                    <Badge variant="outline">
                       <Building2 className="mr-1 h-3 w-3" />
                       {location}
                     </Badge>
@@ -66,113 +44,60 @@ export function LocationReport({ sales }: LocationReportProps) {
                   </div>
                   <span className="text-sm font-medium">${data.revenue.toLocaleString()}</span>
                 </div>
-                <Progress
-                  value={(data.revenue / totalCostOfGoods) * 100}
-                  className={location === "Broadway" ? "text-blue-500" : "text-green-500"}
-                />
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>{((data.revenue / totalCostOfGoods) * 100).toFixed(1)}% of total cost of goods</span>
-                  <span>Avg. ${(data.revenue / data.quantity).toFixed(2)} per unit</span>
-                </div>
+                <Progress value={totalUnits ? (data.quantity / totalUnits) * 100 : 0} />
               </div>
             ))}
-          </div>
-
-          <div className="mt-6 h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={locationPieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                >
-                  {locationPieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => `$${Number(value).toLocaleString()}`} />
-              </PieChart>
-            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Battery Types by Location</CardTitle>
-          <CardDescription>Breakdown of battery types sold at each location</CardDescription>
+          <CardTitle>Location Share</CardTitle>
+          <CardDescription>Share of units sold</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-sm font-medium mb-2 flex items-center">
-                <Badge variant="outline" className="bg-blue-50 mr-2">
-                  <Building2 className="mr-1 h-3 w-3" />
-                  Broadway
-                </Badge>
-                Battery Sales
-              </h3>
-              <div className="h-[150px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={broadwayPieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={60}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {broadwayPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `$${Number(value).toLocaleString()}`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-medium mb-2 flex items-center">
-                <Badge variant="outline" className="bg-green-50 mr-2">
-                  <Building2 className="mr-1 h-3 w-3" />
-                  Camelback
-                </Badge>
-                Battery Sales
-              </h3>
-              <div className="h-[150px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={camelbackPieData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={60}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {camelbackPieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => `$${Number(value).toLocaleString()}`} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
+        <CardContent className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={locationPieData} dataKey="value" nameKey="name" outerRadius={100} label>
+                {locationPieData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {Object.keys(salesByLocation).map((location) => {
+        const byType = getSalesByBatteryType(sales.filter((s) => s.location === location))
+        const data = Object.entries(byType)
+          .filter(([, d]) => d.quantity > 0)
+          .map(([name, d]) => ({ name, value: d.quantity }))
+        return (
+          <Card key={location}>
+            <CardHeader>
+              <CardTitle>{location} by Battery Type</CardTitle>
+              <CardDescription>Units sold by type</CardDescription>
+            </CardHeader>
+            <CardContent className="h-[260px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={data} dataKey="value" nameKey="name" outerRadius={80} label>
+                    {data.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )
+      })}
     </div>
   )
 }

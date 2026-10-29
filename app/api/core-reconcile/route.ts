@@ -3,8 +3,8 @@
 // Owner/manager only, scoped to the caller's organization.
 
 import { NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import { getCoreLedger } from "@/lib/core-ledger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -21,65 +21,46 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       drivers: [],
-      totals: { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, still_owes: 0 },
+      totals: { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, customer_kept: 0, still_owes: 0 },
     });
   }
 
   try {
-    const { rows } = await sql`
-      WITH sale_moves AS (
-        SELECT
-          bm.battery_id,
-          bm.driver_id AS driver_id,
-          COALESCE(b.is_warranty, false) AS is_warranty
-        FROM battery_movements bm
-        JOIN batteries b ON b.id = bm.battery_id
-        WHERE bm.to_status = 'sold'
-          AND bm.driver_id IS NOT NULL
-          AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
-      ),
-      turned_in AS (
-        SELECT
-          sm.driver_id,
-          COUNT(*) FILTER (WHERE cr.status = 'returned')::int AS cores_returned
-        FROM sale_moves sm
-        LEFT JOIN core_returns cr ON cr.battery_id = sm.battery_id
-        WHERE sm.is_warranty = false
-        GROUP BY sm.driver_id
-      ),
-      sale_counts AS (
-        SELECT
-          sm.driver_id,
-          COUNT(*)::int AS sold_total,
-          COUNT(*) FILTER (WHERE sm.is_warranty = true)::int  AS warranties,
-          COUNT(*) FILTER (WHERE sm.is_warranty = false)::int AS regular_sales
-        FROM sale_moves sm
-        GROUP BY sm.driver_id
-      )
-      SELECT
-        COALESCE(d.name, 'Unknown driver') AS driver_name,
-        sc.driver_id,
-        COALESCE(sc.regular_sales, 0) AS regular_sales,
-        COALESCE(sc.warranties, 0)    AS warranties,
-        COALESCE(sc.sold_total, 0)    AS sold_total,
-        COALESCE(ti.cores_returned, 0) AS cores_returned,
-        GREATEST(COALESCE(sc.regular_sales, 0) - COALESCE(ti.cores_returned, 0), 0) AS still_owes
-      FROM sale_counts sc
-      LEFT JOIN turned_in ti ON ti.driver_id = sc.driver_id
-      LEFT JOIN drivers d    ON d.id = sc.driver_id
-      ORDER BY still_owes DESC, driver_name ASC;
-    `;
+    // Shared ledger: cores owed = sold (regular + warranty) - returned - customer kept.
+    const ledger = await getCoreLedger(user.orgId);
+    const byDriver = new Map<string, Record<string, string | number | null>>();
+    for (const r of ledger) {
+      const key = r.driver_id ?? "unknown";
+      if (!byDriver.has(key)) {
+        byDriver.set(key, {
+          driver_name: r.driver_name, driver_id: r.driver_id,
+          regular_sales: 0, warranties: 0, sold_total: 0,
+          cores_returned: 0, customer_kept: 0, still_owes: 0,
+        });
+      }
+      const d = byDriver.get(key)! as Record<string, number>;
+      d.sold_total++;
+      if (r.is_warranty) d.warranties++; else d.regular_sales++;
+      if (r.core_state === "returned") d.cores_returned++;
+      else if (r.core_state === "customer_kept") d.customer_kept++;
+      else d.still_owes++;
+    }
+    const rows = Array.from(byDriver.values()).sort(
+      (a, b) => Number(b.still_owes) - Number(a.still_owes) ||
+        String(a.driver_name).localeCompare(String(b.driver_name))
+    );
 
-    const totals = rows.reduce(
-      (acc, r: Record<string, number>) => {
+    const totals = rows.reduce<Record<string, number>>(
+      (acc, r) => {
         acc.regular_sales += Number(r.regular_sales) || 0;
         acc.warranties += Number(r.warranties) || 0;
         acc.sold_total += Number(r.sold_total) || 0;
         acc.cores_returned += Number(r.cores_returned) || 0;
         acc.still_owes += Number(r.still_owes) || 0;
+        acc.customer_kept += Number(r.customer_kept) || 0;
         return acc;
       },
-      { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, still_owes: 0 }
+      { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, customer_kept: 0, still_owes: 0 }
     );
 
     return NextResponse.json({ success: true, drivers: rows, totals });

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { BarChart, FileText, Download, Calendar, Building2, Users, Battery } from "lucide-react"
-import { type SaleRecord, getSalesData, filterSalesByDateRange, getMonthlySalesData } from "@/lib/sales-data"
+import { type SaleRecord, fetchSalesData, filterSalesByDateRange, getMonthlySalesData, getSalesByLocation } from "@/lib/sales-report"
 import { BatteryTypeReport } from "@/components/reports/battery-type-report"
 import { TeamMemberReport } from "@/components/reports/team-member-report"
 import { LocationReport } from "@/components/reports/location-report"
@@ -19,6 +19,8 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [filteredSales, setFilteredSales] = useState<SaleRecord[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   // Initialize dates to last 30 days
   useEffect(() => {
@@ -26,19 +28,26 @@ export default function ReportsPage() {
     const start = new Date()
     start.setDate(start.getDate() - 30)
 
-    setEndDate(end.toISOString().split("T")[0])
-    setStartDate(start.toISOString().split("T")[0])
+    const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/Phoenix" })
+    setEndDate(ymd(end))
+    setStartDate(ymd(start))
   }, [])
 
-  // Load sales data
+  // Load real sales (all time; date filtering is client-side). Clear the old
+  // random mock that used to be cached in localStorage.
   useEffect(() => {
-    const data = getSalesData()
-    setSalesData(data)
+    try {
+      localStorage.removeItem("salesData")
+    } catch {}
+    fetchSalesData()
+      .then(setSalesData)
+      .catch((e) => setLoadError(e instanceof Error ? e.message : "Could not load sales"))
+      .finally(() => setLoading(false))
   }, [])
 
   // Filter sales when date range changes
   useEffect(() => {
-    if (startDate && endDate && salesData.length > 0) {
+    if (startDate && endDate) {
       const filtered = filterSalesByDateRange(salesData, startDate, endDate)
       setFilteredSales(filtered)
     }
@@ -81,7 +90,11 @@ export default function ReportsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Sales Reports</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Sales Reports</h1>
+          {loading && <p className="text-sm text-muted-foreground">Loading sales…</p>}
+          {loadError && <p className="text-sm text-red-600">{loadError}</p>}
+        </div>
         <Button variant="outline" onClick={exportToCSV}>
           <Download className="mr-2 h-4 w-4" />
           Export Report
@@ -136,40 +149,21 @@ export default function ReportsPage() {
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Broadway Sales</CardTitle>
-            <Building2 className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {filteredSales.filter((sale) => sale.location === "Broadway").length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {filteredSales
-                .filter((sale) => sale.location === "Broadway")
-                .reduce((sum, sale) => sum + sale.quantity, 0)}{" "}
-              batteries
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Camelback Sales</CardTitle>
-            <Building2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {filteredSales.filter((sale) => sale.location === "Camelback").length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {filteredSales
-                .filter((sale) => sale.location === "Camelback")
-                .reduce((sum, sale) => sum + sale.quantity, 0)}{" "}
-              batteries
-            </p>
-          </CardContent>
-        </Card>
+        {Object.entries(getSalesByLocation(filteredSales))
+          .sort((x, y) => y[1].quantity - x[1].quantity)
+          .slice(0, 2)
+          .map(([loc, d]) => (
+            <Card key={loc}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{loc} Sales</CardTitle>
+                <Building2 className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{d.quantity}</div>
+                <p className="text-xs text-muted-foreground">${d.revenue.toLocaleString()} cost of goods</p>
+              </CardContent>
+            </Card>
+          ))}
       </div>
 
       <Card className="mb-4">
@@ -243,7 +237,7 @@ export default function ReportsPage() {
                                 ? "bg-blue-50"
                                 : sale.batteryType === "Bravo"
                                   ? "bg-green-50"
-                                  : sale.batteryType === "Charlie"
+                                  : sale.batteryType === "Prius"
                                     ? "bg-amber-50"
                                     : "bg-purple-50"
                             }
@@ -257,7 +251,7 @@ export default function ReportsPage() {
                         <td className="p-3">
                           <Badge
                             variant="outline"
-                            className={sale.location === "Broadway" ? "bg-blue-50" : "bg-green-50"}
+                            className="bg-blue-50"
                           >
                             <Building2 className="mr-1 h-3 w-3" />
                             {sale.location}

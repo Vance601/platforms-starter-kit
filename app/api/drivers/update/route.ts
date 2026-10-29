@@ -46,12 +46,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (!phone) {
-      return NextResponse.json(
-        { success: false, error: "Cell number is required." },
-        { status: 400 }
-      );
-    }
+    // Phone is optional on edit: drivers created from /admin/drivers have no
+    // phone, and requiring one here made every Team-page edit fail.
     if (!companyId) {
       return NextResponse.json(
         { success: false, error: "Company is required." },
@@ -72,18 +68,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // Same write the working /admin/drivers "edit" action does (name +
+    // company only). The old version also set updated_at, which made the
+    // whole UPDATE fail on DBs without that column.
     const { rows } = await sql`
       UPDATE drivers
       SET name = ${name},
-          phone = ${phone},
-          company_id = ${companyId},
-          updated_at = now()
+          company_id = ${companyId}
       WHERE id = ${id}
         AND company_id IN (
           SELECT id FROM companies WHERE org_id = ${user.orgId}
         )
       RETURNING id;
     `;
+
+    if (rows.length > 0 && phone) {
+      // Best-effort; never fail the name/company save because of phone.
+      try {
+        await sql`UPDATE drivers SET phone = ${phone} WHERE id = ${id};`;
+      } catch (e) {
+        console.error("[drivers/update] phone update failed:", e);
+      }
+    }
 
     if (rows.length === 0) {
       return NextResponse.json(

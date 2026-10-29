@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import { getCoreLedger, summarizeCores } from "@/lib/core-ledger";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -112,22 +113,16 @@ export async function GET() {
       WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId});
     `;
 
-    // Core accountability: REGULAR cores only (warranty cores are tracked separately
-    // on the Warranty Report, so we exclude is_warranty = true here to avoid double-counting).
-    // Every regular battery bought from the supplier (has an mbs_invoice_id) carries 1 core charge = 1 core owed.
-    // A core is recovered when its battery is marked status = 'returned_core'.
-    // Outstanding = owed - returned = regular cores not yet returned.
-    const { rows: coreAccountability } = await sql`
-      SELECT
-        COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL AND is_warranty = false)::int AS owed,
-        COUNT(*) FILTER (WHERE status = 'returned_core' AND is_warranty = false)::int AS returned,
-        (
-          COUNT(*) FILTER (WHERE mbs_invoice_id IS NOT NULL AND is_warranty = false)
-          - COUNT(*) FILTER (WHERE status = 'returned_core' AND is_warranty = false)
-        )::int AS outstanding
-      FROM batteries
-      WHERE company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId});
-    `;
+    // Core accountability: shared ledger (lib/core-ledger.ts) so this page,
+    // Core Accountability and Driver Reconcile always agree. Only SOLD batteries
+    // (regular + warranty) owe a core; warehouse/truck stock does not.
+    const coreSummary = summarizeCores(await getCoreLedger(user.orgId));
+    const coreAccountability = [{
+      owed: coreSummary.sold - coreSummary.customer_kept,
+      returned: coreSummary.returned,
+      customer_kept: coreSummary.customer_kept,
+      outstanding: coreSummary.owed,
+    }];
 
     return NextResponse.json({
       success: true,

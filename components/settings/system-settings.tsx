@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,14 +14,33 @@ export function SystemSettings() {
   const [settings, setSettings] = useState({
     companyName: "Duggers Battery",
     lowStockThreshold: 5,
-    defaultLocation: "Broadway",
+    defaultLocation: "",
     enableNotifications: true,
     enableAutoBackup: true,
     backupFrequency: "daily",
     theme: "light",
   })
 
+  // Locations come from the DB (same source as Receive Order), not a
+  // hard-coded list — "Broadway" never existed.
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
+  useEffect(() => {
+    fetch("/api/receive-order/options", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        const locs: { id: string; name: string }[] = (j?.locations ?? []).map((l: { id: string; name: string }) => ({ id: l.id, name: l.name }))
+        setLocations(locs)
+        const saved = typeof window !== "undefined" ? localStorage.getItem("duggers.settings.defaultLocation") : null
+        setSettings((s) => ({
+          ...s,
+          defaultLocation: saved && locs.some((l) => l.id === saved) ? saved : locs[0]?.id ?? "",
+        }))
+      })
+      .catch(() => {})
+  }, [])
+
   const handleSaveSettings = () => {
+    if (settings.defaultLocation) localStorage.setItem("duggers.settings.defaultLocation", settings.defaultLocation)
     // In a real app, this would save to a database or API
     toast({
       title: "Settings saved",
@@ -34,7 +53,7 @@ export function SystemSettings() {
       setSettings({
         companyName: "Duggers Battery",
         lowStockThreshold: 5,
-        defaultLocation: "Broadway",
+        defaultLocation: "",
         enableNotifications: true,
         enableAutoBackup: true,
         backupFrequency: "daily",
@@ -96,8 +115,9 @@ export function SystemSettings() {
               <SelectValue placeholder="Select default location" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Broadway">Broadway</SelectItem>
-              <SelectItem value="Camelback">Camelback</SelectItem>
+              {locations.map((l) => (
+                <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">

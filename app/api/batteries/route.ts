@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import { generateNextBarcode } from "@/lib/barcode";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -148,6 +150,95 @@ export async function GET() {
       })),
       byStatus: statusRows.map(r => ({ status: r.status, count: r.count })),
     });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+// Manually add a single battery (the /batteries/new form). Mirrors the
+// receive-order "addBattery" insert so barcodes, cost and the movement log
+// stay identical to stock received on an invoice.
+export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (user.role !== "owner" && user.role !== "manager") {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+  if (!user.orgId) {
+    return NextResponse.json({ error: "No organization context" }, { status: 403 });
+  }
+
+  try {
+    const body = await req.json();
+    const { locationId, batteryModelCode, serialNumber, cost, notes } = body ?? {};
+    if (!locationId || !batteryModelCode) {
+      return NextResponse.json(
+        { error: "Missing required fields: locationId, batteryModelCode" },
+        { status: 400 }
+      );
+    }
+
+    // Tenant guard: location must belong to the caller's org.
+    const { rows: locs } = await sql`
+      SELECT l.id, l.company_id, c.slug AS company_slug
+      FROM locations l
+      JOIN companies c ON c.id = l.company_id
+      WHERE l.id = ${locationId} AND c.org_id = ${user.orgId};
+    `;
+    if (locs.length === 0) {
+      return NextResponse.json({ error: "Location not found" }, { status: 404 });
+    }
+    const loc = locs[0];
+
+    const { rows: models } = await sql`
+      SELECT battery_models.id AS model_id,
+             battery_models.default_cost AS model_cost,
+             battery_types.id AS type_id,
+             battery_types.default_cost AS type_cost
+      FROM battery_models
+      JOIN battery_types ON battery_types.id = battery_models.battery_type_id
+      WHERE battery_models.code = ${batteryModelCode};
+    `;
+    if (models.length === 0) {
+      return NextResponse.json({ error: "Battery model not found" }, { status: 404 });
+    }
+    const model = models[0];
+    const parsedCost =
+      cost !== undefined && cost !== null && cost !== "" && !isNaN(Number(cost))
+        ? Number(cost)
+        : null;
+    const finalCost = parsedCost ?? model.model_cost ?? model.type_cost ?? 0;
+
+    const barcode = await generateNextBarcode(loc.company_slug, batteryModelCode);
+    const batteryId = crypto.randomUUID();
+    const serial = serialNumber ? String(serialNumber) : null;
+    const noteText = notes ? String(notes) : null;
+
+    await sql`
+      INSERT INTO batteries
+        (id, barcode, serial_number, battery_type_id, battery_model_id, company_id,
+         location_id, status, cost, notes, received_at, created_at)
+      VALUES
+        (${batteryId}, ${barcode}, ${serial}, ${model.type_id}, ${model.model_id},
+         ${loc.company_id}, ${loc.id}, 'in_warehouse', ${finalCost}, ${noteText},
+         NOW(), NOW());
+    `;
+
+    await sql`
+      INSERT INTO battery_movements
+        (id, battery_id, from_status, to_status, to_location_id,
+         occurred_at, recorded_by_id, notes)
+      VALUES
+        (${crypto.randomUUID()}, ${batteryId}, NULL, 'in_warehouse',
+         ${loc.id}, NOW(), ${user.userId}, 'Added manually via Add Battery');
+    `;
+
+    return NextResponse.json({ success: true, batteryId, barcode });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Unknown error" },

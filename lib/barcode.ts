@@ -6,11 +6,17 @@ const COMPANY_CODE_MAP: Record<string, string> = {
   "tucson": "TUC",
 };
 
+// Server runs in UTC (Vercel); after 5pm Phoenix time getDate() already
+// returned tomorrow. Always stamp the business-local (America/Phoenix) day.
 function formatDate(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Phoenix",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${get("year")}${get("month")}${get("day")}`;
 }
 
 export async function generateNextBarcode(

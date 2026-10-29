@@ -247,12 +247,12 @@ export default function ReconcilePage() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Each battery bought from your supplier carries one core charge. Return the dead core to get credited. Outstanding cores are money still owed back to you.
+            Every battery that has been sold (regular or warranty) owes one core, unless the customer kept it and paid the core charge. Warehouse and on-truck stock does not owe a core. Outstanding = cores due minus cores returned. Same calculation as Core Accountability and Driver Reconcile.
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg border px-4 py-3 text-center">
               <p className="text-xl font-bold">{coreAcct.owed}</p>
-              <p className="text-xs text-muted-foreground">Cores Owed</p>
+              <p className="text-xs text-muted-foreground">Cores Due (sold)</p>
             </div>
             <div className="rounded-lg border px-4 py-3 text-center">
               <p className="text-xl font-bold">{coreAcct.returned}</p>

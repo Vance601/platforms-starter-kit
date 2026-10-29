@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { getCurrentUser } from '@/lib/current-user';
+import { getCoreLedger, summarizeCores } from '@/lib/core-ledger';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -55,25 +56,21 @@ export async function GET(req: NextRequest) {
   const to = toRaw && toRaw.trim() ? toRaw.trim() : null;
 
   try {
-    // Cores the driver still owes back, by driver and model.
-    const { rows: outstanding } = await sql`
-      SELECT
-        COALESCE(d.name, 'Unknown driver') AS driver_name,
-        COALESCE(mdl.code, 'Unknown model') AS model_code,
-        COUNT(*)::int AS cores_owed
-      FROM core_returns cr
-      LEFT JOIN batteries b        ON b.id = cr.battery_id
-      LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
-      LEFT JOIN battery_movements bm
-        ON bm.battery_id = cr.battery_id AND bm.to_status = 'sold'
-      LEFT JOIN drivers d          ON d.id = bm.driver_id
-      WHERE cr.status = 'owed'
-        AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
-        AND (${from}::timestamp IS NULL OR b.sold_at >= ${from}::timestamp)
-        AND (${to}::timestamp   IS NULL OR b.sold_at <  (${to}::timestamp + INTERVAL '1 day'))
-      GROUP BY d.name, mdl.code
-      ORDER BY cores_owed DESC, driver_name ASC;
-    `;
+    // Cores still owed, by driver and model, from the shared ledger
+    // (lib/core-ledger.ts) so this matches Battery Audit and Driver Reconcile.
+    const ledger = await getCoreLedger(user.orgId, from, to);
+    const owedMap = new Map<string, { driver_name: string; model_code: string; cores_owed: number }>();
+    for (const r of ledger) {
+      if (r.core_state !== 'owed') continue;
+      const k = `${r.driver_name}|${r.model_code}`;
+      const e = owedMap.get(k) ?? { driver_name: r.driver_name, model_code: r.model_code, cores_owed: 0 };
+      e.cores_owed++;
+      owedMap.set(k, e);
+    }
+    const outstanding = Array.from(owedMap.values()).sort(
+      (a, b) => b.cores_owed - a.cores_owed || a.driver_name.localeCompare(b.driver_name)
+    );
+    const ledgerSummary = summarizeCores(ledger);
 
     // Counts and dollars per status.
     const { rows: summaryRows } = await sql`
@@ -157,6 +154,14 @@ export async function GET(req: NextRequest) {
 
       summary.depositsRefunded += money(row.refunds);
     }
+
+    // Counts come from the shared ledger (covers sold batteries that never got
+    // a core_returns row); dollar figures still come from core_returns.
+    summary.owed = ledgerSummary.owed;
+    summary.returned = ledgerSummary.returned;
+    summary.customer_kept = ledgerSummary.customer_kept;
+    summary.other = 0;
+    summary.total = ledgerSummary.sold;
 
     summary.netOutstanding =
       Math.round((summary.depositsOwed - summary.depositsRefunded) * 100) / 100;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { normalizeBatteryType } from "@/lib/battery-types";
 import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function GET() {
 
     const { rows } = await sql`
       SELECT
-        bt.name AS battery_type,
+        COALESCE(bt.code, bt.name) AS battery_type,
         l.name  AS location,
         b.status AS status,
         count(*)::int AS count
@@ -62,7 +63,7 @@ export async function GET() {
     const typeLocation: Record<string, Record<string, number>> = {};
 
     for (const r of rows) {
-      const type = r.battery_type || "Unknown";
+      const type = normalizeBatteryType(r.battery_type);
       const loc = r.location || "Unassigned";
       const status = r.status || "unknown";
       const n = r.count || 0;

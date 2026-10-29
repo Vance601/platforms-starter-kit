@@ -23,7 +23,7 @@ type Summary = {
 const TYPE_ACCENT: Record<string, string> = {
   Alpha: "border-l-blue-600 text-blue-600",
   Bravo: "border-l-green-600 text-green-600",
-  AMG: "border-l-red-600 text-red-600",
+  AGM: "border-l-red-600 text-red-600",
   Tesla: "border-l-purple-600 text-purple-600",
   Prius: "border-l-amber-600 text-amber-600",
 }

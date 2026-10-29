@@ -105,6 +105,22 @@ export default function BatteriesPage() {
     window.print();
   }
 
+  // Classification cards count the same live set the table/filters use
+  // (warehouse + on truck), split so both numbers are visible. The API's
+  // byClassification is warehouse-only, which is why the cards and the
+  // filter results used to disagree.
+  const classificationCounts = (() => {
+    const m = new Map<string, { total: number; warehouse: number; truck: number }>();
+    for (const c of byClassification) m.set(c.classification, { total: 0, warehouse: 0, truck: 0 });
+    for (const b of batteries) {
+      const e = m.get(b.classification) ?? { total: 0, warehouse: 0, truck: 0 };
+      e.total++;
+      if (b.status === "on_truck") e.truck++; else e.warehouse++;
+      m.set(b.classification, e);
+    }
+    return Array.from(m.entries()).map(([classification, v]) => ({ classification, ...v }));
+  })();
+
   const filteredBatteries = batteries.filter(b => {
     if (locationFilter && b.locationSlug !== locationFilter) return false;
     if (classificationFilter && b.classification !== classificationFilter) return false;
@@ -131,6 +147,7 @@ export default function BatteriesPage() {
     const colors: Record<string, { bg: string; text: string }> = {
       in_warehouse: { bg: "#0c0", text: "white" },
       assigned: { bg: "#fc0", text: "black" },
+      on_truck: { bg: "#fc0", text: "black" },
       sold: { bg: "#888", text: "white" },
       core_returned: { bg: "#06c", text: "white" },
     };
@@ -239,11 +256,11 @@ export default function BatteriesPage() {
 
       <h3 style={{ marginTop: "16px", marginBottom: "12px", fontWeight: 500, fontSize: "16px" }}>By Classification</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px", marginBottom: "24px" }}>
-        {byClassification.map(c => (
+        {classificationCounts.map(c => (
           <div key={c.classification} style={{ padding: "16px", border: "1px solid #ddd", borderRadius: "4px", background: "#fafafa" }}>
             <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>{c.classification} Batteries</div>
-            <div style={{ fontSize: "28px", fontWeight: 600 }}>{c.count}</div>
-            <div style={{ fontSize: "12px", color: "#999" }}>in stock</div>
+            <div style={{ fontSize: "28px", fontWeight: 600 }}>{c.total}</div>
+            <div style={{ fontSize: "12px", color: "#999" }}>{c.warehouse} in warehouse · {c.truck} on trucks</div>
           </div>
         ))}
       </div>
@@ -285,9 +302,7 @@ export default function BatteriesPage() {
             style={{ width: "100%", padding: "8px" }}>
             <option value="">All Statuses</option>
             <option value="in_warehouse">In Warehouse</option>
-            <option value="assigned">Assigned</option>
-            <option value="sold">Sold</option>
-            <option value="core_returned">Core Returned</option>
+            <option value="on_truck">On Truck (Assigned)</option>
           </select>
         </div>
         <div>

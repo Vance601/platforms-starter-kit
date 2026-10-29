@@ -1,4 +1,5 @@
-// Mock sales data for reports
+// LEGACY MOCK sales data. Only the old localStorage core-returns pages use this.
+// The Reports page uses real data from lib/sales-report.ts (/api/reports/sales).
 export type SaleRecord = {
   id: string
   date: string
