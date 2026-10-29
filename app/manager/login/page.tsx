@@ -89,6 +89,12 @@ export default function ManagerLoginPage() {
           >
             {busy ? "Signing in…" : "Sign In"}
           </button>
+
+          <p className="text-center text-sm">
+            <a href="/forgot-password" className="text-blue-400 underline">
+              Forgot password?
+            </a>
+          </p>
         </div>
       </div>
     </div>

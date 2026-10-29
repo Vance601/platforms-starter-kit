@@ -6,6 +6,9 @@ const PUBLIC_ROUTES = [
   "/api/auth",
   "/manager/",
   "/api/auth-manager",
+  "/forgot-password",
+  "/reset-password",
+  "/api/password-reset",
   "/driver/", // NOT bare "/driver" - that prefix also matched the admin /driver-sales page
   "/api/auth-driver",
   "/d/", // customer driver entry point: /d/<company>

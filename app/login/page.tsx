@@ -131,9 +131,10 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign In"}
           </button>
 
-          {/* Password resets are owner-handled (no email service wired up). */}
-          <p className="text-center text-xs text-slate-500">
-            Forgot your password? Ask the owner to reset it.
+          <p className="text-center text-sm">
+            <a href="/forgot-password" className="text-blue-400 underline">
+              Forgot password?
+            </a>
           </p>
         </div>
 
