@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const { rows: driverRows } = await sql`
       SELECT id, name, company_id
       FROM drivers
-      WHERE id = ${driverId};
+      WHERE id = ${driverId} AND active = TRUE;
     `;
     if (driverRows.length === 0) {
       return NextResponse.json(
@@ -175,8 +175,9 @@ export async function POST(req: NextRequest) {
 
     // --- Perform the sale ---
     // 1) Mark the battery sold. Clear truck columns.
+    let soldCount: number | null = 0;
     if (isWarranty) {
-      await sql`
+      ({ rowCount: soldCount } = await sql`
         UPDATE batteries
         SET status = 'sold',
             sold_at = NOW(),
@@ -186,18 +187,25 @@ export async function POST(req: NextRequest) {
             warranty_note = ${warrantyNote},
             truck_id = NULL,
             current_truck_id = NULL
-        WHERE id = ${battery.id};
-      `;
+        WHERE id = ${battery.id} AND status = 'on_truck' AND truck_id = ${truck.id};
+      `);
     } else {
-      await sql`
+      ({ rowCount: soldCount } = await sql`
         UPDATE batteries
         SET status = 'sold',
             sold_at = NOW(),
             sold_on_call_number = ${callNumber},
             truck_id = NULL,
             current_truck_id = NULL
-        WHERE id = ${battery.id};
-      `;
+        WHERE id = ${battery.id} AND status = 'on_truck' AND truck_id = ${truck.id};
+      `);
+    }
+
+    if (!soldCount) {
+      return NextResponse.json(
+        { success: false, error: "That battery was just sold or moved. Refresh and try again." },
+        { status: 409 }
+      );
     }
 
     // 2) Log the movement (on_truck -> sold).

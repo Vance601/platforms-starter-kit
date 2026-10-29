@@ -45,6 +45,30 @@ export default function DriverNav() {
           </Link>
         );
       })}
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await fetch("/api/auth-driver", { method: "DELETE" });
+          } catch {
+            // Fall through - send them to login regardless.
+          }
+          window.location.href = "/driver/login";
+        }}
+        style={{
+          flex: "1 1 auto",
+          padding: "10px 12px",
+          fontSize: 14,
+          fontWeight: 600,
+          borderRadius: 10,
+          border: "1px solid #7f1d1d",
+          background: "#1e293b",
+          color: "#fca5a5",
+          cursor: "pointer",
+        }}
+      >
+        Log out
+      </button>
     </nav>
   );
 }

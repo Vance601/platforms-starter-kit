@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import crypto from "crypto";
+
+// Same scrypt "salt:hash" scheme as admin/drivers - driver must change 0000 on first login.
+function hashPin(pin: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return `${salt}:${crypto.scryptSync(pin, salt, 64).toString("hex")}`;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -69,8 +76,8 @@ export async function POST(req: Request) {
     }
 
     const { rows } = await sql`
-      INSERT INTO drivers (id, name, phone, company_id, active, created_at, updated_at)
-      VALUES (gen_random_uuid(), ${name}, ${phone}, ${companyId}, true, now(), now())
+      INSERT INTO drivers (id, name, phone, company_id, pin_hash, active, created_at, updated_at)
+      VALUES (gen_random_uuid(), ${name}, ${phone}, ${companyId}, ${hashPin("0000")}, true, now(), now())
       RETURNING id;
     `;
 

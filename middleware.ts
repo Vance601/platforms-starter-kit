@@ -4,11 +4,24 @@ import { NextResponse } from "next/server";
 const PUBLIC_ROUTES = [
   "/login",
   "/api/auth",
-  "/manager",
+  "/manager/",
   "/api/auth-manager",
-  "/driver",
+  "/driver/", // NOT bare "/driver" - that prefix also matched the admin /driver-sales page
   "/api/auth-driver",
   "/d/", // customer driver entry point: /d/<company>
+];
+
+// APIs the PIN-based driver app calls. Each verifies the driver_session
+// signature itself; middleware only routes.
+const DRIVER_APIS = [
+  "/api/driver",
+  "/api/transfer",
+  "/api/battery/sellable",
+  "/api/battery/loadable",
+  "/api/battery/load",
+  "/api/battery/sell",
+  "/api/battery/return-core",
+  "/api/battery/sold-list",
 ];
 
 const SIGNED_IN_ALLOWED = ["/onboarding", "/pending", "/api/signup"];
@@ -33,7 +46,11 @@ function hasValidSessionCookie(req: ReqWithCookies, name: string): boolean {
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
-  if (PUBLIC_ROUTES.some((p) => pathname.startsWith(p))) {
+  if (
+    pathname === "/driver" ||
+    pathname === "/manager" ||
+    PUBLIC_ROUTES.some((p) => pathname.startsWith(p))
+  ) {
     return NextResponse.next();
   }
 
@@ -47,10 +64,13 @@ export default auth((req) => {
   // was redirected to /login. The page then parsed an HTML login page as JSON
   // and reported a generic load failure. It only appeared to work for the
   // owner, whose browser also holds a GitHub session.
-  const signedIn =
-    Boolean(req.auth) ||
-    hasValidSessionCookie(r, "manager_session") ||
-    hasValidSessionCookie(r, "driver_session");
+  const staffSignedIn =
+    Boolean(req.auth) || hasValidSessionCookie(r, "manager_session");
+  // A driver session only opens the driver APIs - never admin pages/APIs.
+  const driverAllowed =
+    hasValidSessionCookie(r, "driver_session") &&
+    DRIVER_APIS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const signedIn = staffSignedIn || driverAllowed;
 
   if (signedIn && SIGNED_IN_ALLOWED.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
@@ -58,6 +78,15 @@ export default auth((req) => {
 
   if (signedIn) {
     return NextResponse.next();
+  }
+
+  // APIs get a JSON 401 instead of an HTML redirect, so pages can show
+  // "please log in" instead of failing to parse a login page as JSON.
+  if (pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { success: false, error: "Not signed in. Please log in again." },
+      { status: 401 }
+    );
   }
 
   const loginUrl = new URL("/login", req.url);

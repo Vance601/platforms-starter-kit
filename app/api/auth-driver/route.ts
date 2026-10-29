@@ -24,6 +24,30 @@ function signSession(driverId: string, expiry: number): string {
   return `${payload}.${sig}`;
 }
 
+// PIN brute-force lockout. 4-digit PINs are only 10,000 combinations, so
+// failed attempts are counted per driver and the driver is locked out for
+// LOCK_MINUTES after MAX_FAILS misses in a row. Stored in its own table
+// (created on first use, additive only - drivers table untouched).
+const MAX_FAILS = 5;
+const LOCK_MINUTES = 15;
+let lockTableReady: Promise<unknown> | null = null;
+function ensureLockTable() {
+  if (!lockTableReady) {
+    lockTableReady = sql`
+      CREATE TABLE IF NOT EXISTS driver_login_attempts (
+        driver_id    TEXT PRIMARY KEY,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        locked_until TIMESTAMPTZ,
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `.catch((e) => {
+      lockTableReady = null;
+      throw e;
+    });
+  }
+  return lockTableReady;
+}
+
 const SESSION_MAX_AGE = 60 * 60 * 12; // 12 hours — covers a shift
 
 export async function POST(req: NextRequest) {
@@ -60,13 +84,47 @@ export async function POST(req: NextRequest) {
     );
 
     if (!driver) return INVALID;
+
+    await ensureLockTable();
+    const { rows: lockRows } = await sql`
+      SELECT locked_until FROM driver_login_attempts
+      WHERE driver_id = ${String(driver.id)} AND locked_until > NOW()
+      LIMIT 1;
+    `;
+    if (lockRows.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Too many wrong PINs. Try again in ${LOCK_MINUTES} minutes or ask a manager to reset your PIN.`,
+        },
+        { status: 429 }
+      );
+    }
     if (!driver.active) {
       return NextResponse.json(
         { success: false, error: "This driver is inactive. See a manager." },
         { status: 403 }
       );
     }
-    if (!driver.pin_hash || !verifyPin(pin, driver.pin_hash)) return INVALID;
+    if (!driver.pin_hash || !verifyPin(pin, driver.pin_hash)) {
+      // Count the miss; lock once it reaches MAX_FAILS (then the counter restarts).
+      await sql`
+        INSERT INTO driver_login_attempts (driver_id, failed_count, updated_at)
+        VALUES (${String(driver.id)}, 1, NOW())
+        ON CONFLICT (driver_id) DO UPDATE
+        SET failed_count = CASE
+              WHEN driver_login_attempts.failed_count + 1 >= ${MAX_FAILS} THEN 0
+              ELSE driver_login_attempts.failed_count + 1 END,
+            locked_until = CASE
+              WHEN driver_login_attempts.failed_count + 1 >= ${MAX_FAILS}
+              THEN NOW() + make_interval(mins => ${LOCK_MINUTES})
+              ELSE driver_login_attempts.locked_until END,
+            updated_at = NOW();
+      `;
+      return INVALID;
+    }
+
+    await sql`DELETE FROM driver_login_attempts WHERE driver_id = ${String(driver.id)};`;
 
     const expiry = Date.now() + SESSION_MAX_AGE * 1000;
     const token = signSession(driver.id, expiry);

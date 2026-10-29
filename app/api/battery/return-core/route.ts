@@ -20,6 +20,17 @@ function verifySession(token: string | undefined): string | null {
 
 // ---- GET: list this driver's company's OWED cores (from the core_returns ledger) ----
 export async function GET(req: NextRequest) {
+  try {
+    return await getCores(req);
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+async function getCores(req: NextRequest) {
   const token = req.cookies.get("driver_session")?.value;
   const driverId = verifySession(token);
   if (!driverId) {
@@ -30,7 +41,7 @@ export async function GET(req: NextRequest) {
   }
 
   const driverRow = await sql`
-    SELECT company_id FROM drivers WHERE id = ${driverId} LIMIT 1
+    SELECT company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1
   `;
   if (driverRow.rows.length === 0) {
     return NextResponse.json(
@@ -99,18 +110,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Parse charge (only meaningful for 'kept'). Default to 25 if missing/invalid.
-  let charge = 25;
+  // Charge is required for 'kept' - no silent default amount.
+  let charge = 0;
   if (decision === "kept") {
     const raw = body.chargeAmount;
     const parsed = typeof raw === "number" ? raw : parseFloat(String(raw ?? ""));
-    if (!isNaN(parsed) && parsed >= 0) {
-      charge = parsed;
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return NextResponse.json(
+        { success: false, error: "Enter the core charge amount." },
+        { status: 400 }
+      );
     }
+    charge = parsed;
   }
 
   const driverRow = await sql`
-    SELECT id, name, company_id FROM drivers WHERE id = ${driverId} LIMIT 1
+    SELECT id, name, company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1
   `;
   if (driverRow.rows.length === 0) {
     return NextResponse.json(

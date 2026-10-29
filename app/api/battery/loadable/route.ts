@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
     const { rows: driverRows } = await sql`
       SELECT id, name, company_id
       FROM drivers
-      WHERE id = ${driverId};
+      WHERE id = ${driverId} AND active = TRUE;
     `;
     if (driverRows.length === 0) {
       return NextResponse.json(

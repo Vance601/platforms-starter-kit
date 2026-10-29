@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       const num = String(truckCode)
         .trim()
         .toUpperCase()
-        .replace(/^DG-TRUCK-/, "")
+        .replace(/^[A-Z0-9]+-TRUCK-/, "")
         .replace(/^TRUCK-/, "")
         .replace(/^#/, "");
 
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     const { rows: truckRows } = await sql`
       SELECT id, truck_number, current_driver_id
       FROM trucks
-      WHERE id = ${truckId} AND active = TRUE
+      WHERE id = ${truckId} AND active = TRUE AND company_id = ${myCompanyId}
       LIMIT 1;
     `;
     const truck = truckRows[0];
