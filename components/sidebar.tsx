@@ -140,6 +140,12 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               Drivers
             </Link>
           </Button>
+          <Button variant={pathname === "/admin/users" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+            <Link href="/admin/users">
+              <Users className="mr-2 h-4 w-4" />
+              Users &amp; Passwords
+            </Link>
+          </Button>
           <Button variant={pathname === "/locations" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/locations">
               <MapPin className="mr-2 h-4 w-4" />
