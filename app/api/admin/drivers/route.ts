@@ -228,6 +228,12 @@ export async function PATCH(req: NextRequest) {
         RETURNING id;
       `;
       if (rows.length === 0) return NOT_FOUND;
+      // A PIN reset also clears any wrong-PIN lockout.
+      try {
+        await sql`DELETE FROM driver_login_attempts WHERE driver_id = ${String(driverId)};`;
+      } catch {
+        // Table not created yet - nothing to clear.
+      }
       return NextResponse.json({
         success: true,
         message: "PIN reset to 0000 - driver sets a new one at next login",

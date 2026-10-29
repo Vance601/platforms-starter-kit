@@ -65,6 +65,11 @@ export async function POST(req: NextRequest) {
       WHERE id = ${movementId}
         AND approval_status = 'pending'
         AND to_status = 'on_truck'
+        AND battery_id IN (
+          SELECT b.id FROM batteries b
+          JOIN companies c ON c.id = b.company_id
+          WHERE c.org_id = ${user.orgId}
+        )
       RETURNING id, approved_at;
     `;
 

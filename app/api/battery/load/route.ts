@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     const { rows: driverRows } = await sql`
       SELECT id, name, company_id
       FROM drivers
-      WHERE id = ${driverId};
+      WHERE id = ${driverId} AND active = TRUE;
     `;
     if (driverRows.length === 0) {
       return NextResponse.json(
@@ -101,13 +101,21 @@ export async function POST(req: NextRequest) {
     //    NOTE: current_driver_id is intentionally NOT set here — that column
     //    references the users table, not drivers. The driver linkage is captured
     //    on the movement row (driver_id -> drivers) and via the truck.
-    await sql`
+    const { rowCount: loaded } = await sql`
       UPDATE batteries
       SET status = 'on_truck',
           truck_id = ${truck.id},
           current_truck_id = ${truck.id}
-      WHERE id = ${battery.id};
+      WHERE id = ${battery.id}
+        AND status = 'in_warehouse'
+        AND truck_id IS NULL;
     `;
+    if (!loaded) {
+      return NextResponse.json(
+        { success: false, error: "That battery was just loaded by someone else." },
+        { status: 409 }
+      );
+    }
 
     // 2) Log the movement (in_warehouse -> on_truck). id has no default, so we generate it.
     //    Only columns whose FKs resolve correctly are populated:
@@ -117,10 +125,10 @@ export async function POST(req: NextRequest) {
     const movementId = crypto.randomUUID();
     await sql`
       INSERT INTO battery_movements
-        (id, battery_id, from_status, to_status, to_truck_id, driver_id, notes)
+        (id, battery_id, from_status, to_status, to_truck_id, driver_id, approval_status, notes)
       VALUES
         (${movementId}, ${battery.id}, 'in_warehouse', 'on_truck',
-         ${truck.id}, ${driverId},
+         ${truck.id}, ${driverId}, 'pending',
          ${`Loaded onto truck #${truck.truck_number} by ${driver.name}`});
     `;
 

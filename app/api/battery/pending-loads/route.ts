@@ -21,6 +21,10 @@ export async function GET() {
       );
     }
 
+    if (!user.orgId) {
+      return NextResponse.json({ success: true, count: 0, loads: [] });
+    }
+
     const { rows } = await sql`
       SELECT
         m.id                AS movement_id,
@@ -45,6 +49,7 @@ export async function GET() {
       WHERE m.to_status = 'on_truck'
         AND m.approval_status = 'pending'
         AND b.status = 'on_truck'
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY m.occurred_at ASC;
     `;
 
