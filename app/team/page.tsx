@@ -112,7 +112,7 @@ export default function TeamPage() {
       setFormError("Name is required.")
       return
     }
-    if (!formPhone.trim()) {
+    if (!editingId && !formPhone.trim()) {
       setFormError("Cell number is required.")
       return
     }
