@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { normalizeBatteryType } from "@/lib/battery-types";
 import { getCurrentUser } from "@/lib/current-user";
 
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
     const locTypeRows = await sql`
       SELECT
         COALESCE(l.name, 'Unassigned')  AS location,
-        COALESCE(bt.name, 'Unknown')    AS type,
+        COALESCE(bt.code, bt.name, 'Unknown') AS type,
         count(*)::int                   AS count
       FROM batteries b
       JOIN companies c ON c.id = b.company_id
@@ -154,7 +155,7 @@ export async function GET(req: Request) {
     const byLocation = new Map<string, Record<string, string | number>>();
     for (const r of locTypeRows.rows) {
       const loc = r.location as string;
-      const type = r.type as string;
+      const type = normalizeBatteryType(r.type as string);
       const n = r.count as number;
       typeSet.add(type);
       if (!byLocation.has(loc)) byLocation.set(loc, { location: loc, total: 0 });

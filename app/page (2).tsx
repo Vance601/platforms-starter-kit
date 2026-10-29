@@ -70,7 +70,7 @@ type Charts = {
 const TYPE_ACCENT: Record<string, string> = {
   Alpha: "border-l-blue-600 text-blue-600",
   Bravo: "border-l-green-600 text-green-600",
-  AMG: "border-l-red-600 text-red-600",
+  AGM: "border-l-red-600 text-red-600",
   Tesla: "border-l-purple-600 text-purple-600",
   Prius: "border-l-amber-600 text-amber-600",
 }
@@ -86,7 +86,7 @@ const STATUS_FILL: Record<string, string> = {
 const TYPE_FILL: Record<string, string> = {
   Alpha: "#2563eb",
   Bravo: "#16a34a",
-  AMG: "#dc2626",
+  AGM: "#dc2626",
   Tesla: "#7c3aed",
   Prius: "#d97706",
 }

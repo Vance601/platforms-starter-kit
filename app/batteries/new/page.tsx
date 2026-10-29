@@ -9,39 +9,84 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowLeft } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { CANONICAL_BATTERY_TYPES, normalizeBatteryType } from "@/lib/battery-types"
+
+type LocationOpt = { id: string; name: string; companyName: string }
+type ModelOpt = { code: string; displayName: string | null; classification: string }
 
 export default function NewBatteryPage() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [locations, setLocations] = useState<LocationOpt[]>([])
+  const [classifications, setClassifications] = useState<string[]>([])
+  const [models, setModels] = useState<ModelOpt[]>([])
   const [formData, setFormData] = useState({
     type: "",
     model: "",
-    manufacturer: "",
     serialNumber: "",
-    capacity: "",
-    voltage: "",
-    location: "",
+    cost: "",
+    locationId: "",
     notes: "",
   })
 
+  useEffect(() => {
+    // Same option source as Receive Order: real locations, battery_types and
+    // battery_models from the DB -- no hardcoded chemistry list.
+    fetch("/api/receive-order/options")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.error) throw new Error(j.error)
+        setLocations(j.locations ?? [])
+        const types = (j.classifications ?? []).map((c: string) => normalizeBatteryType(c))
+        setClassifications(types.length ? Array.from(new Set<string>(types)) : [...CANONICAL_BATTERY_TYPES])
+        setModels(
+          (j.models ?? []).map((m: ModelOpt) => ({ ...m, classification: normalizeBatteryType(m.classification) }))
+        )
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "Could not load options"))
+  }, [])
+
+  const filteredModels = useMemo(
+    () => models.filter((m) => !formData.type || m.classification === formData.type),
+    [models, formData.type]
+  )
+
   const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, [field]: value, ...(field === "type" ? { model: "" } : {}) }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+    if (!formData.locationId || !formData.model) {
+      setError("Location and model are required.")
+      return
+    }
     setIsSubmitting(true)
-
-    // Simulate API call with timeout
-    setTimeout(() => {
-      console.log("Battery added:", formData)
-      setIsSubmitting(false)
-      // Redirect to batteries page after successful submission
+    try {
+      const res = await fetch("/api/batteries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          locationId: formData.locationId,
+          batteryModelCode: formData.model,
+          serialNumber: formData.serialNumber || null,
+          cost: formData.cost || null,
+          notes: formData.notes || null,
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j?.success) throw new Error(j?.error || `Save failed (${res.status})`)
       router.push("/batteries")
-    }, 1000)
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed")
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -59,90 +104,78 @@ export default function NewBatteryPage() {
         <Card className="max-w-3xl">
           <CardHeader>
             <CardTitle>Battery Information</CardTitle>
-            <CardDescription>Enter the details of the new battery</CardDescription>
+            <CardDescription>Adds one battery to warehouse stock with a generated barcode</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            {error && <p className="text-sm text-red-600">{error}</p>}
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
                 <Label htmlFor="type">Battery Type</Label>
-                <Select value={formData.type} onValueChange={(value) => handleChange("type", value)} required>
+                <Select value={formData.type} onValueChange={(v) => handleChange("type", v)}>
                   <SelectTrigger id="type">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="lithium-ion">Lithium-Ion</SelectItem>
-                    <SelectItem value="lead-acid">Lead-Acid</SelectItem>
-                    <SelectItem value="agm">AGM</SelectItem>
-                    <SelectItem value="gel">Gel</SelectItem>
-                    <SelectItem value="nimh">NiMH</SelectItem>
+                    {classifications.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="model">Model</Label>
-                <Input
-                  id="model"
-                  placeholder="Enter model number"
-                  value={formData.model}
-                  onChange={(e) => handleChange("model", e.target.value)}
-                  required
-                />
+                <Select value={formData.model} onValueChange={(v) => handleChange("model", v)} required>
+                  <SelectTrigger id="model">
+                    <SelectValue placeholder={filteredModels.length ? "Select model" : "No models"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredModels.map((m) => (
+                      <SelectItem key={m.code} value={m.code}>
+                        {m.displayName || m.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="manufacturer">Manufacturer</Label>
-                <Input
-                  id="manufacturer"
-                  placeholder="Enter manufacturer"
-                  value={formData.manufacturer}
-                  onChange={(e) => handleChange("manufacturer", e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="serialNumber">Serial Number</Label>
+                <Label htmlFor="serialNumber">Serial Number (optional)</Label>
                 <Input
                   id="serialNumber"
                   placeholder="Enter serial number"
                   value={formData.serialNumber}
                   onChange={(e) => handleChange("serialNumber", e.target.value)}
-                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="capacity">Capacity</Label>
+                <Label htmlFor="cost">Cost (optional, defaults to model cost)</Label>
                 <Input
-                  id="capacity"
-                  placeholder="E.g., 120 Ah"
-                  value={formData.capacity}
-                  onChange={(e) => handleChange("capacity", e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="voltage">Voltage</Label>
-                <Input
-                  id="voltage"
-                  placeholder="E.g., 12V"
-                  value={formData.voltage}
-                  onChange={(e) => handleChange("voltage", e.target.value)}
-                  required
+                  id="cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="e.g. 105.00"
+                  value={formData.cost}
+                  onChange={(e) => handleChange("cost", e.target.value)}
                 />
               </div>
 
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  placeholder="Enter installation location"
-                  value={formData.location}
-                  onChange={(e) => handleChange("location", e.target.value)}
-                  required
-                />
+                <Select value={formData.locationId} onValueChange={(v) => handleChange("locationId", v)} required>
+                  <SelectTrigger id="location">
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locations.map((l) => (
+                      <SelectItem key={l.id} value={l.id}>
+                        {l.companyName} — {l.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
