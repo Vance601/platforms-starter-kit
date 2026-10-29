@@ -683,7 +683,7 @@ export default function Dashboard() {
                   )}
                   {charts.approvalBreakdown.length > 0 && (
                     <div className="mt-4">
-                      <p className="mb-1.5 text-xs text-muted-foreground">Movement approval mix (in range)</p>
+                      <p className="mb-1.5 text-xs text-muted-foreground">Truck load approvals (in range)</p>
                       <div className="flex flex-wrap gap-1.5">
                         {charts.approvalBreakdown.map((a) => (
                           <Badge key={a.status} variant="outline" className="text-xs">

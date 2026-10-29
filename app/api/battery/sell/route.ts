@@ -208,6 +208,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // The battery has left the truck, so its load can no longer be reviewed
+    // in Load Approvals. Close out any still-pending load so it doesn't linger.
+    await sql`
+      UPDATE battery_movements
+      SET approval_status = 'approved',
+          approved_at = NOW(),
+          notes = COALESCE(notes, '') || ${` | Auto-approved: sold on call #${callNumber}`}
+      WHERE battery_id = ${battery.id}
+        AND to_status = 'on_truck'
+        AND approval_status = 'pending';
+    `;
+
     // 2) Log the movement (on_truck -> sold).
     //    driver_id references the drivers table (confirmed via FK). This is the
     //    column all reports read for driver attribution. Do NOT use to_driver_id
