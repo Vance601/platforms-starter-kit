@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { requireOrg } from "@/lib/require-org";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -11,13 +11,9 @@ export const maxDuration = 30;
 // their cores?" rather than which truck the sale was made off of.
 export async function GET() {
   try {
-    const signedIn = await isSignedIn();
-    if (!signedIn) {
-      return NextResponse.json(
-        { success: false, error: "Not signed in." },
-        { status: 401 }
-      );
-    }
+    const g = await requireOrg();
+    if (!g.ok) return g.response;
+    const orgId = g.orgId;
 
     const { rows } = await sql`
       SELECT
@@ -45,6 +41,7 @@ export async function GET() {
       FROM trucks t
       LEFT JOIN companies c ON c.id = t.company_id
       LEFT JOIN drivers d   ON d.id = t.current_driver_id
+      WHERE t.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       ORDER BY t.truck_number ASC;
     `;
 

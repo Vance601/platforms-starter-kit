@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { requireOrg } from "@/lib/require-org";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -9,13 +9,9 @@ export const maxDuration = 30;
 // joined to driver names and battery barcodes for human-readable rows.
 export async function GET() {
   try {
-    const signedIn = await isSignedIn();
-    if (!signedIn) {
-      return NextResponse.json(
-        { success: false, error: "Not signed in." },
-        { status: 401 }
-      );
-    }
+    const g = await requireOrg();
+    if (!g.ok) return g.response;
+    const orgId = g.orgId;
 
     // Recent battery movements (load, sell, core return) — driver + battery.
     const { rows: movements } = await sql`
@@ -33,6 +29,7 @@ export async function GET() {
       LEFT JOIN drivers   d ON d.id = bm.driver_id
       LEFT JOIN batteries b ON b.id = bm.battery_id
       LEFT JOIN trucks    t ON t.id = COALESCE(bm.to_truck_id, bm.from_truck_id)
+      WHERE b.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       ORDER BY bm.occurred_at DESC NULLS LAST
       LIMIT 30;
     `;
@@ -50,6 +47,7 @@ export async function GET() {
       LEFT JOIN batteries b ON b.id = cr.battery_id
       WHERE cr.status IN ('returned','customer_kept')
         AND cr.returned_at IS NOT NULL
+        AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       ORDER BY cr.returned_at DESC NULLS LAST
       LIMIT 30;
     `;
