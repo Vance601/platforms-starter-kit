@@ -21,7 +21,7 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       drivers: [],
-      totals: { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, still_owes: 0 },
+      totals: { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, customer_kept: 0, still_owes: 0 },
     });
   }
 
@@ -50,16 +50,17 @@ export async function GET() {
         String(a.driver_name).localeCompare(String(b.driver_name))
     );
 
-    const totals = rows.reduce(
-      (acc, r: Record<string, unknown>) => {
+    const totals = rows.reduce<Record<string, number>>(
+      (acc, r) => {
         acc.regular_sales += Number(r.regular_sales) || 0;
         acc.warranties += Number(r.warranties) || 0;
         acc.sold_total += Number(r.sold_total) || 0;
         acc.cores_returned += Number(r.cores_returned) || 0;
         acc.still_owes += Number(r.still_owes) || 0;
+        acc.customer_kept += Number(r.customer_kept) || 0;
         return acc;
       },
-      { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, still_owes: 0 }
+      { regular_sales: 0, warranties: 0, sold_total: 0, cores_returned: 0, customer_kept: 0, still_owes: 0 }
     );
 
     return NextResponse.json({ success: true, drivers: rows, totals });
