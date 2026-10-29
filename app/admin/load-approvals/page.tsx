@@ -111,7 +111,11 @@ export default function AdminLoadApprovals() {
     const abs = Math.abs(remaining);
     const h = Math.floor(abs / 3_600_000);
     const m = Math.floor((abs % 3_600_000) / 60_000);
-    const label = overdue ? `OVERDUE by ${h}h ${m}m` : `${h}h ${m}m left`;
+    // Math is right (scan time + 8h window). A huge number like ~2000h just
+    // means the load was scanned ~83 days ago and never approved; show days.
+    const d = Math.floor(h / 24);
+    const span = d >= 2 ? `${d}d ${h % 24}h` : `${h}h ${m}m`;
+    const label = overdue ? `OVERDUE by ${span}` : `${span} left`;
     let color = "#34d399";
     if (overdue) color = "#f87171";
     else if (remaining <= WARN_MS) color = "#fbbf24";

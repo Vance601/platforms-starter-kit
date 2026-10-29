@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import { auth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -32,17 +33,28 @@ export async function POST(req: NextRequest) {
 
     // Resolve a human-readable approver label for the audit note.
     // getCurrentUser() returns role/ids but not name/email, so look them up.
-    let approver = user.userId;
+    // Never surface the raw id (e.g. GitHub login "Vance601"). Prefer the
+    // session display name, then users.name/email, then a generic label.
+    let approver = "";
     try {
-      const { rows: who } = await sql`
-        SELECT name, email FROM users WHERE id = ${user.userId} LIMIT 1;
-      `;
-      if (who.length > 0) {
-        approver = (who[0].name as string) || (who[0].email as string) || user.userId;
-      }
+      const session = await auth();
+      approver = (session?.user?.name || "").trim();
     } catch {
-      // fall back to userId if the lookup fails
+      // no session (manager cookie path)
     }
+    if (!approver) {
+      try {
+        const { rows: who } = await sql`
+          SELECT name, email FROM users WHERE id = ${user.userId} LIMIT 1;
+        `;
+        const n = ((who[0]?.name as string) || "").trim();
+        if (n && n !== user.userId) approver = n;
+        else if (who[0]?.email) approver = who[0].email as string;
+      } catch {
+        // ignore
+      }
+    }
+    if (!approver) approver = user.role === "owner" ? "Owner" : "Manager";
 
     const { rows } = await sql`
       UPDATE battery_movements

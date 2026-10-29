@@ -6,9 +6,12 @@ import { QRCodeSVG } from "qrcode.react";
 type Delivery = {
   id: string;
   supplier: string | null;
-  receipt_number: string | null;
-  po_number: string | null;
-  receipt_date: string | null;
+  receipt_number?: string | null;
+  po_number?: string | null;
+  receipt_date?: string | null;
+  // /api/print-labels returns these names (batch_date / reference).
+  batch_date?: string | null;
+  reference?: string | null;
   total_units: number | null;
   battery_count: number;
 };
@@ -21,9 +24,16 @@ type BatteryLabel = {
 
 function fmtDate(d: string | null): string {
   if (!d) return "no date";
+  // DATE columns arrive as "YYYY-MM-DD" or midnight-UTC ISO; render the
+  // calendar day as-is so Phoenix (UTC-7) doesn't shift it back a day.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  if (m) {
+    const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return d;
-  return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Phoenix" });
 }
 
 export default function PrintLabelsPage() {
@@ -117,8 +127,8 @@ export default function PrintLabelsPage() {
             <option value="">Select a delivery...</option>
             {deliveries.map((d) => (
               <option key={d.id} value={d.id}>
-                {(d.supplier || "Unknown supplier")} - {fmtDate(d.receipt_date)}
-                {d.receipt_number ? ` - #${d.receipt_number}` : ""} - {d.battery_count} batteries
+                {(d.supplier || "Unknown supplier")} - {fmtDate(d.batch_date ?? d.receipt_date ?? null)}
+                {(d.reference ?? d.receipt_number) ? ` - #${d.reference ?? d.receipt_number}` : ""} - {d.battery_count} batteries
               </option>
             ))}
           </select>
