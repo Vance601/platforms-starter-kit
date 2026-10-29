@@ -53,7 +53,7 @@ export async function GET() {
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN locations     l  ON l.id  = b.location_id
       WHERE c.org_id = ${user.orgId}
-      GROUP BY bt.name, l.name, b.status;
+      GROUP BY COALESCE(bt.code, bt.name), l.name, b.status;
     `;
 
     let total = 0;
