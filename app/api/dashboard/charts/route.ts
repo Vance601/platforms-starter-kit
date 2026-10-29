@@ -98,12 +98,21 @@ export async function GET(req: Request) {
     // rather than assumed, so this stays correct whatever the column holds.
     const approvalRows = await sql`
       SELECT
-        COALESCE(m.approval_status, '(not set)') AS approval_status,
+        -- Same meaning as Load Approvals: only warehouse->truck loads count,
+        -- and a 'pending' load whose battery has since left the truck (sold,
+        -- returned) is no longer waiting on anyone, so it is shown separately.
+        CASE
+          WHEN m.approval_status = 'pending' AND b.status = 'on_truck' THEN 'awaiting approval'
+          WHEN m.approval_status = 'pending' THEN 'never approved (battery moved on)'
+          ELSE COALESCE(m.approval_status, '(not set)')
+        END AS approval_status,
         count(*)::int                            AS count
       FROM battery_movements m
       JOIN batteries b ON b.id = m.battery_id
       JOIN companies c ON c.id = b.company_id
       WHERE c.org_id = ${org}
+        AND m.to_status = 'on_truck'
+        AND m.from_status = 'in_warehouse'
         AND (${start}::text IS NULL OR m.occurred_at >= ${start}::timestamp)
         AND (${end}::text   IS NULL OR m.occurred_at <  (${end}::date + INTERVAL '1 day'))
       GROUP BY 1

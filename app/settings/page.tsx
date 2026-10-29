@@ -30,7 +30,7 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle>User Management</CardTitle>
-              <CardDescription>Add, edit, or remove technicians and managers</CardDescription>
+              <CardDescription>Everyone with a login in your organization. Drivers are managed under Admin → Drivers.</CardDescription>
             </CardHeader>
             <CardContent>
               <UserManagement />
