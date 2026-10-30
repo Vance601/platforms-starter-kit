@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 
 const PUBLIC_ROUTES = [
   "/login",
+  "/warranty-lookup",
+  "/api/public/warranty-lookup",
   "/api/auth",
   "/manager/",
   "/api/auth-manager",
