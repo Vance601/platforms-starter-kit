@@ -59,10 +59,15 @@ function loadLibrary(): Promise<void> {
 export function BarcodeReader({
   onScan,
   label = "Scan a battery",
+  wide = false,
 }: {
   onScan?: (value: string) => void;
   label?: string;
+  // Wide, short scan box for long 1D barcodes such as a VIN.
+  wide?: boolean;
 }) {
+  // Unique region per instance so two readers can share a page.
+  const regionId = useRef(`${REGION_ID}-${Math.random().toString(36).slice(2, 8)}`).current;
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<"idle" | "starting" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
@@ -115,11 +120,11 @@ export function BarcodeReader({
     await new Promise((r) => setTimeout(r, 50));
 
     try {
-      const inst = new window.Html5Qrcode(REGION_ID);
+      const inst = new window.Html5Qrcode(regionId);
       scannerRef.current = inst;
       await inst.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
+        { fps: 10, qrbox: wide ? { width: 300, height: 110 } : { width: 240, height: 240 } },
         (decodedText) => {
           const now = Date.now();
           const clean = (decodedText || "").trim();
@@ -188,7 +193,7 @@ export function BarcodeReader({
       </div>
 
       {/* html5-qrcode injects the video element into this div. */}
-      <div id={REGION_ID} className="overflow-hidden rounded-md" />
+      <div id={regionId} className="overflow-hidden rounded-md" />
 
       {message ? (
         <p className="mt-2 break-all font-mono text-xs text-green-400">{message}</p>

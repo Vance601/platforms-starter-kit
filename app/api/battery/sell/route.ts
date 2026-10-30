@@ -2,6 +2,8 @@ import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
+import { parseSaleCustomer, ensureSaleTables, writeSaleRecord } from "@/lib/sale-records";
+import { getOrgSettings } from "@/lib/org-settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -174,6 +176,14 @@ export async function POST(req: NextRequest) {
       coreCharge = Math.round(n * 100) / 100;
     }
 
+    // Optional VIN-first block (customer + vehicle + warranty). Validated
+    // before anything is written; absent on the old sale path.
+    const vehicleSale = parseSaleCustomer(body);
+    if (typeof vehicleSale === "string") {
+      return NextResponse.json({ success: false, error: vehicleSale }, { status: 400 });
+    }
+    if (vehicleSale) await ensureSaleTables();
+
     // --- Perform the sale ---
     // 1) Mark the battery sold. Clear truck columns.
     let soldCount: number | null = 0;
@@ -258,11 +268,38 @@ export async function POST(req: NextRequest) {
          ${coreStatus}, ${coreCharge}, ${coreNote});
     `;
 
+    // 4) VIN-first: link customer, vehicle and warranty to this sale.
+    let record: Awaited<ReturnType<typeof writeSaleRecord>> | null = null;
+    let recordError: string | null = null;
+    if (vehicleSale) {
+      try {
+        const { rows: org } = await sql`
+          SELECT c.org_id, bm.code AS grp
+          FROM batteries b
+          LEFT JOIN companies c ON c.id = b.company_id
+          LEFT JOIN battery_models bm ON bm.id = b.battery_model_id
+          WHERE b.id = ${battery.id} LIMIT 1;`;
+        const orgId = org[0]?.org_id == null ? null : String(org[0].org_id);
+        const settings = await getOrgSettings(orgId);
+        // The group actually installed comes from the battery itself.
+        vehicleSale.batteryGroup = org[0]?.grp ?? vehicleSale.batteryGroup;
+        record = await writeSaleRecord({
+          input: vehicleSale, orgId, companyId: battery.company_id, batteryId: battery.id,
+          movementId, driverId, callNumber, isWarranty, timeZone: settings.timezone,
+        });
+      } catch (e) {
+        recordError = e instanceof Error ? e.message : "unknown";
+      }
+    }
+
     await logAudit({
       action: isWarranty ? "battery.warranty_install" : "battery.sell", actorType: "driver",
       actorId: driverId, actorName: driver.name, companyId: battery.company_id,
       entityType: "battery", entityId: battery.id,
-      details: { barcode: battery.barcode, callNumber, coreId, coreStatus, coreCharge }, req,
+      details: {
+        barcode: battery.barcode, callNumber, coreId, coreStatus, coreCharge,
+        ...(vehicleSale ? { vin: vehicleSale.vin, saleRecordId: record?.saleRecordId ?? null, recordError } : {}),
+      }, req,
     });
 
     return NextResponse.json({
@@ -277,6 +314,10 @@ export async function POST(req: NextRequest) {
       battery: { id: battery.id, barcode: battery.barcode, status: "sold", isWarranty },
       callNumber,
       core: { kept: coreKept, charge: coreCharge },
+      saleRecord: record,
+      ...(recordError
+        ? { warning: "Sale recorded, but the customer/warranty details did not save. Tell your manager." }
+        : {}),
     });
   } catch (err: unknown) {
     return NextResponse.json(

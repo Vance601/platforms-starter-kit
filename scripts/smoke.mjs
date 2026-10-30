@@ -33,6 +33,8 @@ for (const p of ["/api/trucks/overview", "/api/activity/feed", "/api/locations/o
 }
 await check("anonymous upload blocked", "/api/receive-delivery/upload", is(401, 403, 307), { method: "POST" });
 await check("driver API blocked without session", "/api/battery/return-core", is(401));
+await check("VIN decode blocked without session", "/api/vin/decode", is(401), { method: "POST" });
+await check("VIN photo blocked without session", "/api/vin/photo", is(401), { method: "POST" });
 // Old mock pages now redirect to the real screens (may first bounce to /login).
 await check("/core-returns redirects", "/core-returns", (r) => r.status >= 300 && r.status < 400);
 await check("/team/x/edit redirects", "/team/x/edit", (r) => r.status >= 300 && r.status < 400);
