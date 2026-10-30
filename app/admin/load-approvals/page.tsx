@@ -28,6 +28,8 @@ export default function AdminLoadApprovals() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [, setTick] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<string | null>(null);
   const didInit = useRef(false);
 
   async function loadQueue() {
@@ -84,6 +86,46 @@ export default function AdminLoadApprovals() {
       setError("Network error.");
     }
     setApprovingId(null);
+  }
+
+  // Bulk approve: one request per load through the same approve-load API,
+  // sequentially so every approval is audited exactly like a single tap.
+  async function approveMany(ids: string[]) {
+    if (ids.length === 0) return;
+    if (!window.confirm(`Approve ${ids.length} load${ids.length === 1 ? "" : "s"}? Only do this after checking them.`)) return;
+    setError("");
+    setFlash(null);
+    let ok = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      setBulk(`Approving ${i + 1} of ${ids.length}…`);
+      try {
+        const res = await fetch("/api/battery/approve-load", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ movementId: ids[i] }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          ok++;
+          setLoads((prev) => prev.filter((l) => l.movement_id !== ids[i]));
+        } else failed.push(data.error || ids[i]);
+      } catch {
+        failed.push("network error");
+      }
+    }
+    setBulk(null);
+    setSelected(new Set());
+    setFlash(`Approved ${ok} of ${ids.length} loads.`);
+    if (failed.length) setError(`${failed.length} not approved: ${failed.slice(0, 3).join("; ")}`);
+  }
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
   }
 
   const wrap: React.CSSProperties = {
@@ -145,6 +187,25 @@ export default function AdminLoadApprovals() {
           <button onClick={() => loadQueue()} style={{ ...btn, background: "#334155", color: "#f8fafc" }}>
             Refresh
           </button>
+          {loads.length > 0 && (
+            <>
+              <button
+                onClick={() => approveMany(loads.filter((l) => selected.has(l.movement_id)).map((l) => l.movement_id))}
+                disabled={!!bulk || selected.size === 0}
+                style={{ ...btn, background: "#16a34a", color: "#f8fafc", marginLeft: 8, opacity: selected.size === 0 ? 0.5 : 1 }}
+              >
+                Approve selected ({selected.size})
+              </button>
+              <button
+                onClick={() => approveMany(loads.map((l) => l.movement_id))}
+                disabled={!!bulk}
+                style={{ ...btn, background: "#0f766e", color: "#f8fafc", marginLeft: 8 }}
+              >
+                Approve all ({loads.length})
+              </button>
+              {bulk && <span style={{ marginLeft: 12, color: "#94a3b8", fontSize: 13 }}>{bulk}</span>}
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -163,6 +224,13 @@ export default function AdminLoadApprovals() {
                   style={{ background: "#1e293b", borderRadius: 12, padding: 16, borderLeft: `4px solid ${cd.color}` }}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select load"
+                      checked={selected.has(l.movement_id)}
+                      onChange={() => toggle(l.movement_id)}
+                      style={{ width: 20, height: 20 }}
+                    />
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ fontSize: 16, fontWeight: 600 }}>
                         Truck #{l.truck_number ?? "—"}
