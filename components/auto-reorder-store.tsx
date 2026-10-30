@@ -32,7 +32,7 @@ export const useAutoReorderStore = create<AutoReorderState>((set) => ({
   removeItemFromReorder: (reorderId, itemId) =>
     set((state) => ({
       reorders: state.reorders.map((reorder) =>
-        reorder.id === reorderId ? { ...reorder, items: reorder.items.filter((item) => item.id !== itemId) } : reorder,
+        reorder.id === reorderId ? { ...reorder, items: reorder.items.filter((item: any) => item.id !== itemId) } : reorder,
       ),
     })),
   updateItemQuantity: (reorderId, itemId, quantity) =>
@@ -41,7 +41,7 @@ export const useAutoReorderStore = create<AutoReorderState>((set) => ({
         reorder.id === reorderId
           ? {
               ...reorder,
-              items: reorder.items.map((item) => (item.id === itemId ? { ...item, quantity } : item)),
+              items: reorder.items.map((item: any) => (item.id === itemId ? { ...item, quantity } : item)),
             }
           : reorder,
       ),

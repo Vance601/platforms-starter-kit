@@ -51,7 +51,7 @@ export function useInventorySummary() {
 
     if (location) {
       const locKey = location.toLowerCase()
-      return item.locations && item.locations[locKey] ? item.locations[locKey] : 0
+      return item.locations && (item.locations as Record<string, number>)[locKey] ? (item.locations as Record<string, number>)[locKey] : 0
     }
 
     return item.totalCount || 0

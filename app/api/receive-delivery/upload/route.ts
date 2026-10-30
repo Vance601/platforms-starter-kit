@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { put } from "@vercel/blob";
-import { auth } from "@/lib/auth";
+import { requireOrg } from "@/lib/require-org";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -9,10 +9,8 @@ export const maxDuration = 60;
 // No database writes — the page saves the URL via createDeliveryReceipt.
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
-    }
+    const g = await requireOrg(); // GitHub owner or manager_session login
+    if (!g.ok) return g.response;
 
     const form = await req.formData();
     const file = form.get("file") as File | null;

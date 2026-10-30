@@ -10,7 +10,8 @@
     "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

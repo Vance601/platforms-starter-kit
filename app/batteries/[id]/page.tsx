@@ -162,7 +162,7 @@ export default function BatteryDetailPage({ params }: { params: { id: string } }
                   <TrendingUp className="mr-2 h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Charge Level</span>
                 </div>
-                <span>{battery.chargeLevel}</span>
+                <span>{(battery as any).chargeLevel ?? battery.powerLevel}</span>
               </div>
 
               <div className="flex items-center justify-between">
