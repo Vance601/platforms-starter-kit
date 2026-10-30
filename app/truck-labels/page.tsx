@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useOrgSettings } from "@/lib/use-org-settings";
 
 type Truck = {
   id: string;
@@ -12,7 +13,7 @@ type Truck = {
 
 // One printable QR sticker per truck, for the windshield or door frame.
 //
-// The QR encodes DG-TRUCK-<number> - the truck NUMBER, not the database id.
+// The QR encodes <PREFIX>-TRUCK-<number> (org barcode prefix, default DG) - the truck NUMBER, not the database id.
 // A person can read it off the sticker and type it if the label is damaged,
 // it means something over the radio, and it survives a data rebuild.
 //
@@ -20,6 +21,7 @@ type Truck = {
 // shift ends and everything loaded on that truck moves to the new driver.
 export default function TruckLabelsPage() {
   const [trucks, setTrucks] = useState<Truck[]>([]);
+  const { barcodePrefix } = useOrgSettings();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -59,7 +61,7 @@ export default function TruckLabelsPage() {
 
     const cards = chosen
       .map((t) => {
-        const code = `DG-TRUCK-${t.truck_number}`;
+        const code = `${barcodePrefix}-TRUCK-${t.truck_number}`;
         const url =
           "https://api.qrserver.com/v1/create-qr-code/?size=400x400&margin=0&data=" +
           encodeURIComponent(code);
@@ -214,7 +216,7 @@ export default function TruckLabelsPage() {
                         marginTop: 2,
                       }}
                     >
-                      DG-TRUCK-{t.truck_number}
+                      {barcodePrefix}-TRUCK-{t.truck_number}
                     </span>
                   </span>
                 </label>

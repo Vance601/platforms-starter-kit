@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useOrgSettings } from "@/lib/use-org-settings";
 import { QRCodeSVG } from "qrcode.react";
 
 type Delivery = {
@@ -22,7 +23,7 @@ type BatteryLabel = {
   model_code: string;
 };
 
-function fmtDate(d: string | null): string {
+function fmtDate(d: string | null, timeZone = "America/Phoenix"): string {
   if (!d) return "no date";
   // DATE columns arrive as "YYYY-MM-DD" or midnight-UTC ISO; render the
   // calendar day as-is so Phoenix (UTC-7) doesn't shift it back a day.
@@ -33,11 +34,12 @@ function fmtDate(d: string | null): string {
   }
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return d;
-  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Phoenix" });
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
 }
 
 export default function PrintLabelsPage() {
   const [loading, setLoading] = useState(true);
+  const { timezone } = useOrgSettings();
   const [error, setError] = useState<string | null>(null);
 
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
@@ -127,7 +129,7 @@ export default function PrintLabelsPage() {
             <option value="">Select a delivery...</option>
             {deliveries.map((d) => (
               <option key={d.id} value={d.id}>
-                {(d.supplier || "Unknown supplier")} - {fmtDate(d.batch_date ?? d.receipt_date ?? null)}
+                {(d.supplier || "Unknown supplier")} - {fmtDate(d.batch_date ?? d.receipt_date ?? null, timezone)}
                 {(d.reference ?? d.receipt_number) ? ` - #${d.reference ?? d.receipt_number}` : ""} - {d.battery_count} batteries
               </option>
             ))}

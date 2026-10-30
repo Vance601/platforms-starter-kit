@@ -34,6 +34,7 @@ export default function DriverCoresPage() {
   // Which core has the "No / customer kept" charge field open, and its amount.
   const [keptOpenId, setKeptOpenId] = useState<string | null>(null);
   const [chargeAmounts, setChargeAmounts] = useState<Record<string, string>>({});
+  const [defaultCharge, setDefaultCharge] = useState<string>("25");
 
   async function loadData() {
     setLoading(true);
@@ -52,6 +53,7 @@ export default function DriverCoresPage() {
       }
 
       setCores(data.cores || []);
+      if (typeof (data as any).defaultCoreCharge === "number") setDefaultCharge(String((data as any).defaultCoreCharge));
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -149,7 +151,7 @@ export default function DriverCoresPage() {
               const chargeVal =
                 chargeAmounts[c.core_id] !== undefined
                   ? chargeAmounts[c.core_id]
-                  : "25";
+                  : defaultCharge;
 
               return (
                 <div key={c.core_id} className="rounded-lg bg-slate-800 px-4 py-3">
@@ -227,7 +229,7 @@ export default function DriverCoresPage() {
                             resolveCore(
                               c.core_id,
                               "kept",
-                              parseFloat(chargeVal || "25")
+                              parseFloat(chargeVal || defaultCharge)
                             )
                           }
                           disabled={disabled}
@@ -240,7 +242,7 @@ export default function DriverCoresPage() {
                         >
                           {isThisSubmitting
                             ? "Recording…"
-                            : `Record $${parseFloat(chargeVal || "25").toFixed(2)} charge`}
+                            : `Record $${parseFloat(chargeVal || defaultCharge).toFixed(2)} charge`}
                         </button>
                         <button
                           onClick={() => setKeptOpenId(null)}

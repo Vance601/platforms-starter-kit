@@ -1,4 +1,5 @@
 import { sql } from "@vercel/postgres";
+import { getOrgSettingsForCompanySlug } from "@/lib/org-settings";
 
 const COMPANY_CODE_MAP: Record<string, string> = {
   "abq": "ABQ",
@@ -7,10 +8,10 @@ const COMPANY_CODE_MAP: Record<string, string> = {
 };
 
 // Server runs in UTC (Vercel); after 5pm Phoenix time getDate() already
-// returned tomorrow. Always stamp the business-local (America/Phoenix) day.
-function formatDate(d: Date): string {
+// returned tomorrow. Always stamp the business-local day (org timezone, default America/Phoenix).
+function formatDate(d: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Phoenix",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -36,8 +37,9 @@ export async function generateNextBarcode(
     throw new Error(`Unknown battery model code: ${batteryModelCode}`);
   }
 
-  const dateStr = formatDate(date);
-  const prefix = `DG-${companyCode}-${batteryModelCode}-${dateStr}-`;
+  const settings = await getOrgSettingsForCompanySlug(companySlug);
+  const dateStr = formatDate(date, settings.timezone);
+  const prefix = `${settings.barcodePrefix}-${companyCode}-${batteryModelCode}-${dateStr}-`;
 
   const { rows } = await sql`
     SELECT barcode FROM batteries

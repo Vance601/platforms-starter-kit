@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useOrgSettings } from "@/lib/use-org-settings"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -22,16 +23,17 @@ export default function ReportsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const { timezone } = useOrgSettings()
   // Initialize dates to last 30 days
   useEffect(() => {
     const end = new Date()
     const start = new Date()
     start.setDate(start.getDate() - 30)
 
-    const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "America/Phoenix" })
+    const ymd = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: timezone })
     setEndDate(ymd(end))
     setStartDate(ymd(start))
-  }, [])
+  }, [timezone])
 
   // Load real sales (all time; date filtering is client-side). Clear the old
   // random mock that used to be cached in localStorage.
