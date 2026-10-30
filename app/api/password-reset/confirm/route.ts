@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 // POST { token, newPassword } -> sets the password and burns the token.
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     if (!rowCount) {
       return NextResponse.json({ success: false, error: "This account is inactive. See the owner." }, { status: 403 });
     }
+    await logAudit({ action: "password.reset", actorType: "user", actorId: rows[0].user_id, entityType: "user", entityId: rows[0].user_id, req });
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     console.error("[password-reset/confirm] failed", err);

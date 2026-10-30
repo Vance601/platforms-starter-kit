@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
@@ -256,6 +257,13 @@ export async function POST(req: NextRequest) {
         (${coreId}, ${battery.id}, ${battery.company_id}, ${battery.location_id},
          ${coreStatus}, ${coreCharge}, ${coreNote});
     `;
+
+    await logAudit({
+      action: isWarranty ? "battery.warranty_install" : "battery.sell", actorType: "driver",
+      actorId: driverId, actorName: driver.name, companyId: battery.company_id,
+      entityType: "battery", entityId: battery.id,
+      details: { barcode: battery.barcode, callNumber, coreId, coreStatus, coreCharge }, req,
+    });
 
     return NextResponse.json({
       success: true,

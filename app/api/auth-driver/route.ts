@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { scryptSync, timingSafeEqual } from "crypto";
@@ -121,8 +122,10 @@ export async function POST(req: NextRequest) {
               ELSE driver_login_attempts.locked_until END,
             updated_at = NOW();
       `;
+      await logAudit({ action: "login.driver_failed", actorType: "anonymous", actorId: driver.id, actorName: driver.name, companyId: driver.company_id, req });
       return INVALID;
     }
+    await logAudit({ action: "login.driver", actorType: "driver", actorId: driver.id, actorName: driver.name, companyId: driver.company_id, req });
 
     await sql`DELETE FROM driver_login_attempts WHERE driver_id = ${String(driver.id)};`;
 

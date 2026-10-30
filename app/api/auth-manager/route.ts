@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 // app/api/auth-manager/route.ts
 // Manager login (email + password). Mirrors the driver PIN auth pattern.
 
@@ -67,8 +68,10 @@ export async function POST(req: NextRequest) {
       );
     }
     if (!user.password_hash || !verifyPassword(password, user.password_hash)) {
+      await logAudit({ action: "login.manager_failed", actorType: "anonymous", actorId: user.id, details: { email: emailNorm }, req });
       return INVALID;
     }
+    await logAudit({ action: "login.manager", actorType: "manager", actorId: user.id, actorName: user.name, details: { email: emailNorm }, req });
 
     const expiry = Date.now() + SESSION_MAX_AGE * 1000;
     const token = signSession(user.id, expiry);

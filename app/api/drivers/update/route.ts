@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
@@ -98,6 +99,10 @@ export async function POST(req: Request) {
       );
     }
 
+    await logAudit({
+      action: "driver.update", actorType: user.sessionType === "manager" ? "manager" : "user",
+      actorId: user.userId, orgId: user.orgId, entityType: "driver", entityId: rows[0].id, req,
+    });
     return NextResponse.json({ success: true, id: rows[0].id });
   } catch (err: unknown) {
     return NextResponse.json(

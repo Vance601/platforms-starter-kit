@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
@@ -131,6 +132,12 @@ export async function POST(req: NextRequest) {
          ${truck.id}, ${driverId}, 'pending',
          ${`Loaded onto truck #${truck.truck_number} by ${driver.name}`});
     `;
+
+    await logAudit({
+      action: "battery.load", actorType: "driver", actorId: driverId, actorName: driver.name,
+      companyId: driver.company_id, entityType: "battery", entityId: battery.id,
+      details: { barcode: battery.barcode, truckNumber: truck.truck_number, movementId }, req,
+    });
 
     return NextResponse.json({
       success: true,

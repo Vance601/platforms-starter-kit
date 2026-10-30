@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    await logAudit({ action: "driver.pin_change", actorType: "driver", actorId: driverId, entityType: "driver", entityId: driverId, req });
     return NextResponse.json({ success: true });
   } catch (err: unknown) {
     return NextResponse.json(
