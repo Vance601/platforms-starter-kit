@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DriverNav from "@/components/driver-nav";
+import BarcodeReader from "@/components/barcode-reader";
 import { VinStep, vinStateMissing, type VinSaleState } from "@/components/vin-step";
 
 type Battery = {
@@ -63,6 +64,23 @@ export default function DriverSellPage() {
     (vinState?.decoded.truckBatteries || []).map((b) => [b.id, b.group] as const)
   );
   const isMatch = (id: string) => !!vinState?.group && groupById.get(id) === vinState.group;
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+  function onBatteryScan(code: string) {
+    const c = code.trim().toUpperCase();
+    const hit = batteries.find(
+      (b) => b.barcode.toUpperCase() === c || (b.serial_number || "").toUpperCase() === c
+    );
+    if (hit) {
+      setSelectedId(hit.id);
+      const g = groupById.get(hit.id);
+      setScanMsg(
+        `Selected ${hit.barcode}` +
+          (vinState?.group && g && g !== vinState.group ? ` (group ${g}, the vehicle needs ${vinState.group})` : "")
+      );
+    } else {
+      setScanMsg(`${code} is not on your truck. Check the battery or pick it from the list.`);
+    }
+  }
   const showRest = vinMode === "classic" || !!vinState;
   const vinMissing = vinMode === "vin" ? (vinState ? vinStateMissing(vinState) : "Scan the VIN first") : null;
 
@@ -263,6 +281,15 @@ export default function DriverSellPage() {
             <button onClick={() => setVinMode("vin")} className="text-xs text-blue-400 underline">
               Selling without a VIN. Switch back to VIN-first sale
             </button>
+          ) : null}
+
+          {/* Scan-to-sell: scanning a battery's barcode selects it */}
+          {claimedTruck && showRest && batteries.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Scan the battery you&apos;re installing</p>
+              <BarcodeReader onScan={onBatteryScan} />
+              {scanMsg ? <p className="text-xs text-amber-300">{scanMsg}</p> : null}
+            </div>
           ) : null}
 
           {/* Battery list */}
