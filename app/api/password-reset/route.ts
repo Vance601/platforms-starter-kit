@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 // POST { email } -> emails a single-use reset link if the account exists.
 // Always returns the same neutral message so it never reveals which emails
 // have accounts. Rate limited per email and per IP.
@@ -69,6 +70,8 @@ export async function POST(req: NextRequest) {
       VALUES (${String(user.id)}, ${email}, ${ip}, ${hashToken(token)},
               NOW() + make_interval(mins => ${TOKEN_MINUTES}));
     `;
+
+    await logAudit({ action: "password.reset_requested", actorType: "anonymous", entityType: "user", entityId: user.id, details: { email }, req });
 
     const apiKey = process.env.RESEND_API_KEY;
     const from = process.env.EMAIL_FROM || "Battery City <no-reply@battery-city.com>";

@@ -1,3 +1,4 @@
+import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
@@ -79,6 +80,12 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       );
     }
+
+    await logAudit({
+      action: "load.approve", actorType: user.sessionType === "manager" ? "manager" : "user",
+      actorId: user.userId, actorName: approver, orgId: user.orgId,
+      entityType: "battery_movement", entityId: movementId, req,
+    });
 
     return NextResponse.json({
       success: true,
