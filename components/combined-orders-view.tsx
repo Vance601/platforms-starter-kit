@@ -209,14 +209,14 @@ export function CombinedOrdersView({
           const reorder = reorders.find((r) => r.id === reorderId)
           if (reorder) {
             // Find the item in the reorder
-            const reorderItem = reorder.items.find((i) => i.id === itemId)
+            const reorderItem = reorder.items.find((i: any) => i.id === itemId)
             if (reorderItem) {
               // Update both quantity and type
               updateItemQuantity(reorderId, itemId, item.quantity)
 
               // Since we don't have a dedicated function to update the type,
               // we'll update the entire item
-              const updatedItems = reorder.items.map((i) =>
+              const updatedItems = reorder.items.map((i: any) =>
                 i.id === itemId ? { ...i, quantity: item.quantity, type: item.type } : i,
               )
 
@@ -232,7 +232,7 @@ export function CombinedOrdersView({
 
     // Update notes if changed
     if (orderNotes !== editingOrder.notes) {
-      updateReorderNotes(editingOrder.id, orderNotes)
+      updateReorderNotes?.(editingOrder.id, orderNotes)
     }
 
     toast({
