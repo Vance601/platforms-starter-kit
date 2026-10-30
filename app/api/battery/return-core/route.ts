@@ -1,3 +1,4 @@
+import { getOrgSettings } from "@/lib/org-settings";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
@@ -68,7 +69,9 @@ async function getCores(req: NextRequest) {
     ORDER BY b.sold_at DESC NULLS LAST
   `;
 
-  return NextResponse.json({ success: true, cores: cores.rows });
+  const orgRow = await sql`SELECT org_id FROM companies WHERE id = ${companyId} LIMIT 1;`;
+  const { coreCharge } = await getOrgSettings(orgRow.rows[0]?.org_id ?? null);
+  return NextResponse.json({ success: true, cores: cores.rows, defaultCoreCharge: coreCharge });
 }
 
 // ---- POST: resolve one owed core ----

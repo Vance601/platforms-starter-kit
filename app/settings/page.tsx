@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { UserManagement } from "@/components/settings/user-management"
 import { LocationSettings } from "@/components/settings/location-settings"
 import { SystemSettings } from "@/components/settings/system-settings"
+import { OrgSettingsForm } from "@/components/settings/org-settings"
 import { SupplierManagement } from "@/components/settings/supplier-management"
 
 export default function SettingsPage() {
@@ -63,6 +64,15 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="system" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Business Settings</CardTitle>
+              <CardDescription>Barcode prefix, timezone and default core charge for your organization</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OrgSettingsForm />
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle>System Settings</CardTitle>

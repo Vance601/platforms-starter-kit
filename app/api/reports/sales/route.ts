@@ -1,3 +1,4 @@
+import { getOrgSettings } from "@/lib/org-settings";
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
@@ -51,9 +52,10 @@ export async function GET(req: Request) {
       ORDER BY b.sold_at DESC;
     `;
 
+    const { timezone } = await getOrgSettings(user.orgId);
     const sales = rows.map((r) => ({
       id: r.barcode as string,
-      date: new Date(r.sold_at).toLocaleDateString("en-CA", { timeZone: "America/Phoenix" }),
+      date: new Date(r.sold_at).toLocaleDateString("en-CA", { timeZone: timezone }),
       batteryType: normalizeBatteryType(r.battery_type),
       model: r.model_code ?? null,
       quantity: 1,
