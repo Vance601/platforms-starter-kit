@@ -12,8 +12,9 @@ import { useToast } from "@/components/ui/use-toast"
 import { useAutoReorderManager } from "@/components/auto-reorder-manager"
 
 // Alerts are derived server-side from live data (see app/api/alerts/route.ts).
-// Resolutions are persisted in localStorage keyed by alert id + signature, so a
-// resolved alert stays resolved across reloads until its numbers change.
+// Resolutions are stored in the database per organization (alert id + signature),
+// so a resolved alert stays resolved for every manager until its numbers change.
+// RESOLVED_KEY is the old browser-only store; any entries there are migrated once.
 const RESOLVED_KEY = "duggers.alerts.resolved.v1"
 
 type AlertRow = Record<string, any> & { id: string; signature: string; status: "active" | "resolved" }
@@ -27,10 +28,20 @@ function loadResolved(): Record<string, string> {
   }
 }
 
-function saveResolved(map: Record<string, string>) {
+function clearLocalResolved() {
   try {
-    window.localStorage.setItem(RESOLVED_KEY, JSON.stringify(map))
+    window.localStorage.removeItem(RESOLVED_KEY)
   } catch {}
+}
+
+async function saveResolutions(list: { alertId: string; signature: string }[]) {
+  const res = await fetch("/api/alerts/resolutions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolutions: list }),
+  })
+  const j = await res.json().catch(() => ({}))
+  if (!j?.success) throw new Error(j?.error || "Could not save resolution")
 }
 
 export default function AlertsPage() {
@@ -49,19 +60,31 @@ export default function AlertsPage() {
   const autoReorderManager = useAutoReorderManager()
 
   useEffect(() => {
-    fetch("/api/alerts")
-      .then((r) => r.json())
-      .then((j) => {
+    Promise.all([
+      fetch("/api/alerts").then((r) => r.json()),
+      fetch("/api/alerts/resolutions").then((r) => r.json()).catch(() => ({})),
+    ])
+      .then(async ([j, rj]) => {
         if (j?.error) throw new Error(j.error)
-        const resolved = loadResolved()
-        // Drop stale resolutions whose alert no longer exists or whose numbers changed.
-        const live: Record<string, string> = {}
+        const resolved: Record<string, string> = { ...(rj?.resolved ?? {}) }
+        // One-time migration of resolutions saved in this browser before they moved to the database.
+        const local = loadResolved()
+        const toMigrate = (j.alerts ?? [])
+          .filter((a: any) => local[a.id] === a.signature && resolved[a.id] !== a.signature)
+          .map((a: any) => ({ alertId: a.id, signature: a.signature }))
+        if (toMigrate.length) {
+          try {
+            await saveResolutions(toMigrate)
+            for (const m of toMigrate) resolved[m.alertId] = m.signature
+            clearLocalResolved()
+          } catch {}
+        } else if (Object.keys(local).length && rj?.success) {
+          clearLocalResolved()
+        }
         const rows: AlertRow[] = (j.alerts ?? []).map((a: any) => {
           const isResolved = resolved[a.id] === a.signature
-          if (isResolved) live[a.id] = a.signature
           return { ...a, status: isResolved ? "resolved" : "active" }
         })
-        saveResolved(live)
         setAlerts(rows)
         setLocations(j.locations ?? [])
       })
@@ -173,9 +196,10 @@ export default function AlertsPage() {
     }
 
     // Mark alert as resolved
-    const resolved = loadResolved()
-    resolved[alertToResolve.id] = alertToResolve.signature
-    saveResolved(resolved)
+    saveResolutions([{ alertId: alertToResolve.id, signature: alertToResolve.signature }]).catch(() => {
+      setAlerts((prev) => prev.map((alert) => (alert.id === alertId ? { ...alert, status: "active" } : alert)))
+      toast({ title: "Could not save", description: "The resolution was not saved. Please try again." })
+    })
     setAlerts((prev) => prev.map((alert) => (alert.id === alertId ? { ...alert, status: "resolved" } : alert)))
 
     toast({
