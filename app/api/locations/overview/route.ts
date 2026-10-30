@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { isSignedIn } from "@/lib/current-user";
+import { requireOrg } from "@/lib/require-org";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -10,13 +10,9 @@ export const maxDuration = 30;
 // and a breakdown of in-warehouse stock by battery model code.
 export async function GET() {
   try {
-    const signedIn = await isSignedIn();
-    if (!signedIn) {
-      return NextResponse.json(
-        { success: false, error: "Not signed in." },
-        { status: 401 }
-      );
-    }
+    const g = await requireOrg();
+    if (!g.ok) return g.response;
+    const orgId = g.orgId;
 
     const { rows: locations } = await sql`
       SELECT
@@ -28,6 +24,7 @@ export async function GET() {
       FROM locations l
       LEFT JOIN companies c ON c.id = l.company_id
       LEFT JOIN batteries b ON b.location_id = l.id
+      WHERE l.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       GROUP BY l.id, l.name, c.name
       ORDER BY c.name NULLS LAST, l.name;
     `;
@@ -40,6 +37,7 @@ export async function GET() {
       FROM batteries b
       LEFT JOIN battery_models bm ON bm.id = b.battery_model_id
       WHERE b.status = 'in_warehouse'
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       GROUP BY b.location_id, bm.code
       ORDER BY bm.code;
     `;

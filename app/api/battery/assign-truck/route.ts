@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { getCurrentUser } from "@/lib/current-user";
+import { requireOrg } from "@/lib/require-org";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -9,19 +9,10 @@ export const maxDuration = 30;
 // GET — lists for the page: in-warehouse batteries + all trucks.
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Not signed in." },
-        { status: 401 }
-      );
-    }
-    if (user.role !== "owner" && user.role !== "manager") {
-      return NextResponse.json(
-        { success: false, error: "You don't have permission to assign batteries." },
-        { status: 403 }
-      );
-    }
+    const g = await requireOrg({ roles: ["owner", "manager"] });
+    if (!g.ok) return g.response;
+    const user = g.user;
+    const orgId = g.orgId;
 
     const { rows: batteries } = await sql`
       SELECT
@@ -35,6 +26,7 @@ export async function GET() {
       LEFT JOIN battery_types  bt ON bt.id = b.battery_type_id
       WHERE b.status = 'in_warehouse'
         AND b.truck_id IS NULL
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       ORDER BY bm.code, b.barcode;
     `;
 
@@ -46,6 +38,7 @@ export async function GET() {
         d.name          AS driver_name
       FROM trucks t
       LEFT JOIN drivers d ON d.id = t.current_driver_id
+      WHERE t.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
       ORDER BY t.truck_number;
     `;
 
@@ -63,19 +56,10 @@ export async function GET() {
 // row, so a battery on a truck is always traceable to a person.
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json(
-        { success: false, error: "Not signed in." },
-        { status: 401 }
-      );
-    }
-    if (user.role !== "owner" && user.role !== "manager") {
-      return NextResponse.json(
-        { success: false, error: "You don't have permission to assign batteries." },
-        { status: 403 }
-      );
-    }
+    const g = await requireOrg({ roles: ["owner", "manager"] });
+    if (!g.ok) return g.response;
+    const user = g.user;
+    const orgId = g.orgId;
 
     const body = await req.json();
     const batteryId: string | undefined = body?.batteryId;
@@ -104,7 +88,9 @@ export async function POST(req: NextRequest) {
     // Pull the truck AND its current driver, so we can stamp the driver too.
     const { rows: truckRows } = await sql`
       SELECT id, truck_number, current_driver_id
-      FROM trucks WHERE id = ${truckId} LIMIT 1;
+      FROM trucks WHERE id = ${truckId}
+        AND company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
+      LIMIT 1;
     `;
     if (truckRows.length === 0) {
       return NextResponse.json(
@@ -116,7 +102,9 @@ export async function POST(req: NextRequest) {
     const driverId: string | null = truck.current_driver_id ?? null;
 
     const { rows: batteryRows } = await sql`
-      SELECT id, barcode, status, truck_id FROM batteries WHERE id = ${batteryId} LIMIT 1;
+      SELECT id, barcode, status, truck_id FROM batteries WHERE id = ${batteryId}
+        AND company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
+      LIMIT 1;
     `;
     if (batteryRows.length === 0) {
       return NextResponse.json(
