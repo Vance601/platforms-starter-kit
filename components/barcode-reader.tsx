@@ -16,19 +16,26 @@ import { useEffect, useRef, useState, useCallback } from "react";
 type Html5QrcodeInstance = {
   start: (
     camera: { facingMode: string },
-    config: { fps: number; qrbox: { width: number; height: number } },
+    config: Record<string, unknown>,
     onSuccess: (decodedText: string) => void,
     onFailure: (msg: string) => void
   ) => Promise<void>;
   stop: () => Promise<void>;
   clear: () => void;
+  getRunningTrackCapabilities?: () => MediaTrackCapabilities & { torch?: boolean; focusMode?: string[] };
+  applyVideoConstraints?: (c: MediaTrackConstraints) => Promise<void>;
 };
 
 declare global {
   interface Window {
-    Html5Qrcode?: new (elementId: string) => Html5QrcodeInstance;
+    Html5Qrcode?: new (elementId: string, config?: Record<string, unknown>) => Html5QrcodeInstance;
   }
 }
+
+// html5-qrcode Html5QrcodeSupportedFormats enum values.
+const F = { QR_CODE: 0, CODE_39: 3, CODE_93: 4, CODE_128: 5, DATA_MATRIX: 6, ITF: 8, EAN_13: 9, EAN_8: 10, PDF_417: 11, UPC_A: 14, UPC_E: 15 };
+// VIN labels: Code 39 (door jamb / windshield), Code 128, Data Matrix, QR.
+const VIN_FORMATS = [F.CODE_39, F.CODE_128, F.DATA_MATRIX, F.QR_CODE];
 
 const CDN =
   "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
@@ -60,11 +67,17 @@ export function BarcodeReader({
   onScan,
   label = "Scan a battery",
   wide = false,
+  vin = false,
+  accept,
 }: {
   onScan?: (value: string) => void;
   label?: string;
   // Wide, short scan box for long 1D barcodes such as a VIN.
   wide?: boolean;
+  // VIN mode: restrict to VIN barcode formats, close the camera on a good read.
+  vin?: boolean;
+  // Optional filter: return the cleaned value to accept, or null to keep scanning.
+  accept?: (raw: string) => string | null;
 }) {
   // Unique region per instance so two readers can share a page.
   const regionId = useRef(`${REGION_ID}-${Math.random().toString(36).slice(2, 8)}`).current;
@@ -72,6 +85,8 @@ export function BarcodeReader({
   const [status, setStatus] = useState<"idle" | "starting" | "running" | "error">("idle");
   const [message, setMessage] = useState("");
   const [manual, setManual] = useState("");
+  const [torchAvailable, setTorchAvailable] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   const scannerRef = useRef<Html5QrcodeInstance | null>(null);
   // Ignore repeat decodes of the same code within a couple of seconds - a QR in
@@ -120,27 +135,68 @@ export function BarcodeReader({
     await new Promise((r) => setTimeout(r, 50));
 
     try {
-      const inst = new window.Html5Qrcode(regionId);
+      const inst = new window.Html5Qrcode(regionId, {
+        verbose: false,
+        ...(vin ? { formatsToSupport: VIN_FORMATS } : {}),
+        // Native BarcodeDetector (Android Chrome) is much faster and better at
+        // long Code 39; falls back to the ZXing decoder elsewhere (iPhone Safari).
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      });
       scannerRef.current = inst;
+      let accepted = false;
       await inst.start(
         { facingMode: "environment" },
-        { fps: 10, qrbox: wide ? { width: 300, height: 110 } : { width: 240, height: 240 } },
+        {
+          fps: 15,
+          // Box scales with the viewfinder: wide+short for 1D VIN barcodes,
+          // still tall enough to fit a Data Matrix / QR VIN code.
+          qrbox: (w: number, h: number) =>
+            wide || vin
+              ? { width: Math.max(200, Math.floor(w * 0.9)), height: Math.max(100, Math.floor(Math.min(h, w) * 0.45)) }
+              : { width: 240, height: 240 },
+          // Rear camera at high resolution: thin Code 39 bars need the pixels.
+          videoConstraints: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
         (decodedText) => {
+          if (accepted) return;
           const now = Date.now();
-          const clean = (decodedText || "").trim();
-          if (!clean) return;
-          if (lastRef.current.value === clean && now - lastRef.current.at < 2000) return;
-          lastRef.current = { value: clean, at: now };
-
+          const raw = (decodedText || "").trim();
+          if (!raw) return;
+          if (lastRef.current.value === raw && now - lastRef.current.at < 2000) return;
+          lastRef.current = { value: raw, at: now };
+          const clean = accept ? accept(raw) : raw;
+          if (!clean) {
+            setMessage(`Read "${raw.slice(0, 24)}" (not a valid VIN). Hold steady…`);
+            return;
+          }
           if (navigator.vibrate) navigator.vibrate(60);
           setMessage(clean);
           onScan?.(clean);
+          if (vin) {
+            accepted = true;
+            void close();
+          }
         },
         () => {
           // Fires constantly while no code is in frame. Not an error.
         }
       );
       setStatus("running");
+      // Continuous autofocus + torch where the browser exposes them
+      // (Android Chrome; iPhone Safari autofocuses on its own, no torch API).
+      try {
+        const caps = inst.getRunningTrackCapabilities?.();
+        if (caps?.focusMode?.includes("continuous")) {
+          await inst.applyVideoConstraints?.({ advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet] });
+        }
+        setTorchAvailable(!!caps?.torch);
+      } catch {
+        // Optional features only.
+      }
     } catch {
       setStatus("error");
       setMessage(
@@ -149,8 +205,20 @@ export function BarcodeReader({
     }
   }
 
+  async function toggleTorch() {
+    const next = !torchOn;
+    try {
+      await scannerRef.current?.applyVideoConstraints?.({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+      setTorchOn(next);
+    } catch {
+      setTorchAvailable(false);
+    }
+  }
+
   async function close() {
     await stop();
+    setTorchOn(false);
+    setTorchAvailable(false);
     setOpen(false);
     setStatus("idle");
     setMessage("");
@@ -159,6 +227,7 @@ export function BarcodeReader({
   function submitManual() {
     const clean = manual.trim();
     if (!clean) return;
+    // Typed values go straight through; the parent validates and shows errors.
     onScan?.(clean);
     setManual("");
     setMessage(clean);
@@ -182,14 +251,23 @@ export function BarcodeReader({
           {status === "starting"
             ? "Starting camera..."
             : status === "running"
-            ? "Point at the label"
+            ? vin
+              ? "Point at the VIN barcode (door jamb or windshield)"
+              : "Point at the label"
             : status === "error"
             ? "Scanner problem"
             : ""}
         </span>
-        <button onClick={close} className="text-sm text-slate-400 underline">
-          Close
-        </button>
+        <span className="flex gap-3">
+          {torchAvailable ? (
+            <button onClick={toggleTorch} className="text-sm text-amber-300 underline">
+              {torchOn ? "Light off" : "🔦 Light"}
+            </button>
+          ) : null}
+          <button onClick={close} className="text-sm text-slate-400 underline">
+            Close
+          </button>
+        </span>
       </div>
 
       {/* html5-qrcode injects the video element into this div. */}

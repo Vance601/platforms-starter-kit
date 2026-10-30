@@ -6,6 +6,7 @@
 // battery picker, call number, core and warranty-replacement controls.
 import { useRef, useState } from "react";
 import { BarcodeReader } from "@/components/barcode-reader";
+import { extractVin } from "@/lib/vin-check";
 
 export type VinVehicle = { vin: string; year: string | null; make: string | null; model: string | null; engine: string | null };
 export type TruckBattery = { id: string; barcode: string; serial_number: string | null; group: string | null };
@@ -132,7 +133,7 @@ export function VinStep({
           <p className="font-semibold">Step 1 · Scan the vehicle VIN</p>
           <p className="text-xs text-slate-400">Windshield plate or driver door-jamb barcode.</p>
         </div>
-        <BarcodeReader wide onScan={(v) => void lookup(v)} label="Scan VIN barcode" />
+        <BarcodeReader vin accept={extractVin} onScan={(v) => { setTyped(v); void lookup(v); }} label="Scan VIN barcode (live camera)" />
         <div className="flex gap-2">
           <input
             value={typed}
@@ -156,7 +157,7 @@ export function VinStep({
           disabled={!!busy}
           className="w-full rounded-lg border border-slate-600 bg-slate-800/60 px-4 py-3 font-medium"
         >
-          🖼️ Barcode won&apos;t scan? Take a photo of the VIN
+          🖼️ No barcode (VIN only printed on the dash plate)? Take a photo
         </button>
         <input
           ref={fileRef}
