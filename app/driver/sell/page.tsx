@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DriverNav from "@/components/driver-nav";
+import { VinStep, vinStateMissing, type VinSaleState } from "@/components/vin-step";
 
 type Battery = {
   id: string;
@@ -54,6 +55,16 @@ export default function DriverSellPage() {
   const [soldBatteries, setSoldBatteries] = useState<SoldBattery[]>([]);
   const [replacesId, setReplacesId] = useState<string>(""); // "" = none, "OTHER" = not in system
   const [warrantyNote, setWarrantyNote] = useState<string>("");
+
+  // VIN-first sale (default). "classic" is the old path with no customer record.
+  const [vinMode, setVinMode] = useState<"vin" | "classic">("vin");
+  const [vinState, setVinState] = useState<VinSaleState | null>(null);
+  const groupById = new Map(
+    (vinState?.decoded.truckBatteries || []).map((b) => [b.id, b.group] as const)
+  );
+  const isMatch = (id: string) => !!vinState?.group && groupById.get(id) === vinState.group;
+  const showRest = vinMode === "classic" || !!vinState;
+  const vinMissing = vinMode === "vin" ? (vinState ? vinStateMissing(vinState) : "Scan the VIN first") : null;
 
   async function loadData() {
     setLoading(true);
@@ -121,6 +132,19 @@ export default function DriverSellPage() {
       if (coreKept) {
         payload.coreCharge = coreCharge.trim();
       }
+      if (vinMode === "vin" && vinState) {
+        const v = vinState.decoded.vehicle;
+        payload.vehicleSale = {
+          vin: v.vin, year: v.year, make: v.make, model: v.model, engine: v.engine,
+          customerName: vinState.customerName.trim(),
+          customerPhone: vinState.customerPhone.trim(),
+          customerEmail: vinState.customerEmail.trim(),
+          batteryGroup: vinState.group || null,
+          recommendedGroup: vinState.decoded.recommendation?.group || null,
+          recommendationSource: vinState.decoded.recommendation?.source || null,
+          warrantyMonths: vinState.warrantyMonths,
+        };
+      }
       if (isWarranty) {
         if (replacesId === "OTHER") {
           payload.warrantyNote = warrantyNote.trim();
@@ -141,7 +165,13 @@ export default function DriverSellPage() {
         return;
       }
 
-      setSuccessMsg(data.message || "Battery sold.");
+      setSuccessMsg(
+        (data.message || "Battery sold.") +
+          (data.saleRecord?.warrantyEnd ? ` — warranty through ${data.saleRecord.warrantyEnd}` : "") +
+          (data.warning ? ` — ${data.warning}` : "")
+      );
+      setVinState(null);
+      setVinMode("vin");
       // Reset everything.
       setSelectedId(null);
       setCallNumber("");
@@ -165,7 +195,7 @@ export default function DriverSellPage() {
     (replacesId === "OTHER" && warrantyNote.trim() !== "");
 
   const canSell =
-    !!selectedId && !!callNumber.trim() && warrantyOk && !submitting;
+    !!selectedId && !!callNumber.trim() && warrantyOk && !vinMissing && !submitting;
 
   if (loading) {
     return (
@@ -225,8 +255,18 @@ export default function DriverSellPage() {
             </div>
           ) : null}
 
+          {/* Step 1: VIN (default) */}
+          {claimedTruck && batteries.length > 0 && vinMode === "vin" ? (
+            <VinStep state={vinState} onChange={setVinState} onSkip={() => { setVinState(null); setVinMode("classic"); }} />
+          ) : null}
+          {claimedTruck && batteries.length > 0 && vinMode === "classic" ? (
+            <button onClick={() => setVinMode("vin")} className="text-xs text-blue-400 underline">
+              Selling without a VIN. Switch back to VIN-first sale
+            </button>
+          ) : null}
+
           {/* Battery list */}
-          {claimedTruck ? (
+          {claimedTruck && showRest ? (
             batteries.length === 0 ? (
               <p className="py-6 text-center text-slate-500">
                 No batteries on your truck to sell.
@@ -236,7 +276,7 @@ export default function DriverSellPage() {
                 <p className="text-sm text-slate-400">
                   Tap the battery you installed.
                 </p>
-                {batteries.map((b) => {
+                {[...batteries].sort((a, b) => Number(isMatch(b.id)) - Number(isMatch(a.id))).map((b) => {
                   const isSelected = b.id === selectedId;
                   return (
                     <button
@@ -250,6 +290,9 @@ export default function DriverSellPage() {
                       }
                     >
                       <p className="font-mono text-sm">{b.barcode}</p>
+                      {isMatch(b.id) ? (
+                        <p className="text-xs font-semibold text-green-400">✓ Matches group {vinState?.group}</p>
+                      ) : null}
                       {b.serial_number ? (
                         <p className="text-xs text-slate-500">
                           S/N {b.serial_number}
@@ -263,7 +306,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Call number */}
-          {claimedTruck && batteries.length > 0 ? (
+          {claimedTruck && batteries.length > 0 && showRest ? (
             <div className="space-y-1">
               <label className="text-sm text-slate-400">
                 Call number (required)
@@ -279,7 +322,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Core disposition */}
-          {claimedTruck && batteries.length > 0 ? (
+          {claimedTruck && batteries.length > 0 && showRest ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
               <label className="flex items-center gap-3">
                 <input
@@ -328,7 +371,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Warranty toggle */}
-          {claimedTruck && batteries.length > 0 ? (
+          {claimedTruck && batteries.length > 0 && showRest ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
               <label className="flex items-center gap-3">
                 <input
@@ -383,7 +426,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Big Sell button */}
-          {claimedTruck && batteries.length > 0 ? (
+          {claimedTruck && batteries.length > 0 && showRest ? (
             <button
               onClick={handleSell}
               disabled={!canSell}
@@ -400,6 +443,8 @@ export default function DriverSellPage() {
                 ? "Recording…"
                 : !selectedId
                 ? "Select a battery first"
+                : vinMissing
+                ? vinMissing
                 : !callNumber.trim()
                 ? "Enter a call number"
                 : isWarranty && replacesId === ""

@@ -25,6 +25,7 @@ const DRIVER_APIS = [
   "/api/battery/sell",
   "/api/battery/return-core",
   "/api/battery/sold-list",
+  "/api/vin",
 ];
 
 const SIGNED_IN_ALLOWED = ["/onboarding", "/pending", "/api/signup"];
