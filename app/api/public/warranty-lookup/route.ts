@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
           LEFT JOIN customers c ON c.id = s.customer_id
           LEFT JOIN companies co ON co.id = s.company_id
           WHERE s.vin = ${vin}
+          AND NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id::text = s.org_id::text AND o.is_demo = true)
           ORDER BY s.created_at DESC LIMIT 10`
       : await sql`
           SELECT s.vin, s.battery_group, s.warranty_start, s.warranty_end, s.warranty_months,
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
           LEFT JOIN vehicles v ON v.id = s.vehicle_id
           LEFT JOIN companies co ON co.id = s.company_id
           WHERE c.phone_digits = ${digits}
+          AND NOT EXISTS (SELECT 1 FROM organizations o WHERE o.id::text = s.org_id::text AND o.is_demo = true)
           ORDER BY s.created_at DESC LIMIT 10`;
 
     const today = new Date().toISOString().slice(0, 10);
