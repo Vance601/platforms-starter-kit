@@ -55,6 +55,7 @@ export default auth((req) => {
   const { pathname } = req.nextUrl;
 
   if (
+    pathname === "/" || // public landing for signed-out visitors (app/page.tsx routes signed-in users)
     pathname === "/driver" ||
     pathname === "/manager" ||
     PUBLIC_ROUTES.some((p) => pathname.startsWith(p))
