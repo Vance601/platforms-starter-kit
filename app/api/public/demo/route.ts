@@ -15,6 +15,9 @@ export async function POST(req: NextRequest) {
     if (await overLimit(`demo:ip:${ip}`, 60, 3)) {
       return NextResponse.json({ success: false, error: "You've started several demos recently. Please try again in an hour." }, { status: 429 });
     }
+    if (await overLimit("demo:all", 60 * 24, 200)) {
+      return NextResponse.json({ success: false, error: "The demo is very busy today. Please sign up instead or try again tomorrow." }, { status: 429 });
+    }
     const demo = await createDemoOrg();
     await logAudit({ action: "demo.created", actorType: "manager", actorId: demo.userId, orgId: demo.orgId, entityType: "organization", entityId: demo.orgId, req });
     const res = NextResponse.json({ success: true, redirect: "/" });

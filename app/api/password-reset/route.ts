@@ -5,6 +5,7 @@ import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { randomBytes } from "crypto";
+import { outboundAllowed } from "@/lib/demo-guard";
 import { ensureResetTable, hashToken, TOKEN_MINUTES } from "@/lib/password-reset";
 
 export const dynamic = "force-dynamic";
@@ -49,12 +50,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { rows } = await sql`
-      SELECT id, name, email, status FROM users
+      SELECT id, name, email, status, org_id FROM users
       WHERE lower(email) = ${email}
       LIMIT 1;
     `;
     const user = rows[0];
-    if (!user || user.status !== "active") {
+    if (!user || user.status !== "active" || !(await outboundAllowed(user.org_id))) {
       await sql`INSERT INTO password_reset_tokens (email, ip) VALUES (${email}, ${ip});`;
       return NextResponse.json(NEUTRAL);
     }

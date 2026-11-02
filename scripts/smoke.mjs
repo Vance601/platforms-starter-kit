@@ -43,6 +43,7 @@ await check("public sign-up page loads", "/signup", is(200));
 await check("sign-up rejects empty body", "/api/public/signup", is(400), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 await check("demo info needs session", "/api/demo/info", is(401));
 await check("demo create rejects GET", "/api/public/demo", is(405));
+await check("demo cleanup requires CRON_SECRET", "/api/cron/demo-cleanup", is(401));
 await check("invite onboarding API needs session", "/api/signup", is(401), { method: "POST" });
 // Old mock pages now redirect to the real screens (may first bounce to /login).
 await check("/core-returns redirects", "/core-returns", (r) => r.status >= 300 && r.status < 400);

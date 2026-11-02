@@ -4,6 +4,7 @@ import { getDriverContext } from "@/lib/driver-session";
 import { normalizeVin, vinError, decodeVin } from "@/lib/vin";
 import { ensureSaleTables, DEFAULT_WARRANTY_MONTHS, WARRANTY_TERMS } from "@/lib/sale-records";
 import { askClaudeJson } from "@/lib/anthropic";
+import { aiAllowed } from "@/lib/demo-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 45;
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     // 2) AI suggestion — clearly labelled, never treated as verified fitment.
     let aiNote: string | null = null;
-    if (!recommendation && vehicle.make && vehicle.model && validCodes.length) {
+    if (!recommendation && vehicle.make && vehicle.model && validCodes.length && (await aiAllowed(ctx.orgId))) {
       const ai = await askClaudeJson([{
         type: "text",
         text: `Vehicle: ${vehicle.year ?? ""} ${vehicle.make} ${vehicle.model}, engine ${vehicle.engine ?? "unknown"}.
