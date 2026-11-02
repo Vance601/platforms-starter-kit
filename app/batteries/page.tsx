@@ -308,7 +308,7 @@ export default function BatteriesPage() {
         <div>
           <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Search Barcode</div>
           <input type="text" value={searchBarcode} onChange={e => setSearchBarcode(e.target.value)}
-            placeholder="DG-PHX-..." style={{ width: "100%", padding: "8px", boxSizing: "border-box" }} />
+            placeholder="Scan or type barcode" style={{ width: "100%", padding: "8px", boxSizing: "border-box" }} />
         </div>
       </div>
 

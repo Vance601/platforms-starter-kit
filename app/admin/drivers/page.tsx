@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrgCompanies } from "@/lib/use-org-companies";
 import { useState, useEffect } from "react";
 
 type Driver = {
@@ -10,7 +11,6 @@ type Driver = {
   onShiftTruck: string | null;
 };
 
-const COMPANIES = ["phx", "tucson", "abq"];
 
 export default function AdminDrivers() {
   const [loaded, setLoaded] = useState(false);
@@ -22,12 +22,14 @@ export default function AdminDrivers() {
 
   // Add-driver form
   const [newName, setNewName] = useState("");
-  const [newCompany, setNewCompany] = useState("phx");
+  const { companies: orgCompanies, defaultSlug } = useOrgCompanies();
+  const [newCompany, setNewCompany] = useState("");
+  useEffect(() => { if (!newCompany && defaultSlug) setNewCompany(defaultSlug); }, [defaultSlug, newCompany]);
 
   // Edit state
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editCompany, setEditCompany] = useState("phx");
+  const [editCompany, setEditCompany] = useState("");
 
   async function loadDrivers() {
     setError("");
@@ -245,9 +247,9 @@ export default function AdminDrivers() {
             onChange={(e) => setNewCompany(e.target.value)}
             style={input}
           >
-            {COMPANIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
+            {orgCompanies.map((c) => (
+              <option key={c.slug} value={c.slug}>
+                {c.name}
               </option>
             ))}
           </select>
@@ -284,9 +286,9 @@ export default function AdminDrivers() {
                     onChange={(e) => setEditCompany(e.target.value)}
                     style={input}
                   >
-                    {COMPANIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
+                    {orgCompanies.map((c) => (
+                      <option key={c.slug} value={c.slug}>
+                        {c.name}
                       </option>
                     ))}
                   </select>

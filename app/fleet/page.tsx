@@ -1,5 +1,6 @@
 "use client"
 
+import { useOrgCompanies } from "@/lib/use-org-companies"
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -45,11 +46,6 @@ type FeedItem = {
   detail: string | null
 }
 
-const COMPANIES = [
-  { slug: "phx",    label: "Duggers PHX / ERS" },
-  { slug: "abq",    label: "Duggers ABQ" },
-  { slug: "tucson", label: "Express Roadside Tucson" },
-]
 
 function relativeTime(iso: string | null): string {
   if (!iso) return ""
@@ -87,7 +83,9 @@ export default function FleetPage() {
   const [newNumber, setNewNumber] = useState("")
   const [newYearModel, setNewYearModel] = useState("")
   const [newVinLast5, setNewVinLast5] = useState("")
-  const [newCompany, setNewCompany] = useState("phx")
+  const { companies: orgCompanies, defaultSlug } = useOrgCompanies()
+  const [newCompany, setNewCompany] = useState("")
+  useEffect(() => { if (!newCompany && defaultSlug) setNewCompany(defaultSlug) }, [defaultSlug, newCompany])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState("")
 
@@ -118,7 +116,7 @@ export default function FleetPage() {
     setNewNumber("")
     setNewYearModel("")
     setNewVinLast5("")
-    setNewCompany("phx")
+    setNewCompany(defaultSlug)
     setFormError("")
     setIsDialogOpen(true)
   }
@@ -435,8 +433,8 @@ export default function FleetPage() {
                 onChange={(e) => setNewCompany(e.target.value)}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
-                {COMPANIES.map((c) => (
-                  <option key={c.slug} value={c.slug}>{c.label}</option>
+                {orgCompanies.map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.name}</option>
                 ))}
               </select>
             </div>

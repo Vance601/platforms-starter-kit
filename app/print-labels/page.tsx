@@ -23,10 +23,10 @@ type BatteryLabel = {
   model_code: string;
 };
 
-function fmtDate(d: string | null, timeZone = "America/Phoenix"): string {
+function fmtDate(d: string | null, timeZone: string): string {
   if (!d) return "no date";
   // DATE columns arrive as "YYYY-MM-DD" or midnight-UTC ISO; render the
-  // calendar day as-is so Phoenix (UTC-7) doesn't shift it back a day.
+  // calendar day as-is so a US timezone doesn't shift it back a day.
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
   if (m) {
     const dt = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));

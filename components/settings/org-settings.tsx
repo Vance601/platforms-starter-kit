@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { US_TIMEZONES } from "@/lib/us-timezones"
 
 // Per-organization business settings. Only the owner can save (the API enforces it).
 export function OrgSettingsForm() {
@@ -49,8 +50,13 @@ export function OrgSettingsForm() {
         <input className={input} value={prefix} maxLength={6} onChange={(e) => setPrefix(e.target.value.toUpperCase())} />
       </label>
       <label className="block text-sm">
-        Business timezone (IANA name, e.g. America/Phoenix)
-        <input className={input} value={tz} onChange={(e) => setTz(e.target.value)} />
+        Business timezone
+        <select className={input} value={tz} onChange={(e) => setTz(e.target.value)}>
+          {!US_TIMEZONES.some((z) => z.value === tz) && <option value={tz}>{tz}</option>}
+          {US_TIMEZONES.map((z) => (
+            <option key={z.value} value={z.value}>{z.label}</option>
+          ))}
+        </select>
       </label>
       <label className="block text-sm">
         Default core charge ($)

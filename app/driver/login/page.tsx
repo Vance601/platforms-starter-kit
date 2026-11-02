@@ -213,7 +213,7 @@ export default function DriverLogin() {
               <input
                 value={codeInput}
                 onChange={(e) => setCodeInput(e.target.value)}
-                placeholder="Company code (e.g. duggers)"
+                placeholder="Company code"
                 autoCapitalize="none"
                 autoCorrect="off"
                 style={{

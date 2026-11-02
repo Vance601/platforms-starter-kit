@@ -85,7 +85,7 @@ export default function OnboardingPage() {
         <input style={input} value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="e.g. Acme Battery Group" />
 
         <label style={label}>First company</label>
-        <input style={input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Phoenix" />
+        <input style={input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="e.g. Acme Towing" />
 
         <label style={label}>Legal entity (optional)</label>
         <input style={input} value={legalEntity} onChange={(e) => setLegalEntity(e.target.value)} placeholder="defaults to the company name" />
