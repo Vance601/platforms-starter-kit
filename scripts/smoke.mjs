@@ -38,6 +38,9 @@ await check("public warranty lookup page loads", "/warranty-lookup", is(200));
 await check("warranty lookup rejects empty query", "/api/public/warranty-lookup", is(400), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 await check("anonymous blocked: /api/alerts/resolutions", "/api/alerts/resolutions", is(401));
 await check("VIN photo blocked without session", "/api/vin/photo", is(401), { method: "POST" });
+await check("public sign-up page loads", "/signup", is(200));
+await check("sign-up rejects empty body", "/api/public/signup", is(400), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+await check("invite onboarding API needs session", "/api/signup", is(401), { method: "POST" });
 // Old mock pages now redirect to the real screens (may first bounce to /login).
 await check("/core-returns redirects", "/core-returns", (r) => r.status >= 300 && r.status < 400);
 await check("/team/x/edit redirects", "/team/x/edit", (r) => r.status >= 300 && r.status < 400);
