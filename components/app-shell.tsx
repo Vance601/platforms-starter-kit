@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation"
 import Sidebar from "@/components/sidebar"
+import DemoBanner from "@/components/demo-banner"
 
 export default function AppShell({
   children,
@@ -46,7 +47,10 @@ export default function AppShell({
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 ml-64 p-4 overflow-auto">{children}</main>
+      <main className="flex-1 ml-64 p-4 overflow-auto">
+        <DemoBanner />
+        {children}
+      </main>
     </div>
   )
 }

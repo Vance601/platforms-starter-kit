@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   "/d/", // customer driver entry point: /d/<company>
   "/signup", // public self sign-up page (NOT /api/signup, which needs a session)
   "/api/public/signup",
+  "/api/public/demo", // one-click demo (rate limited)
 ];
 
 // APIs the PIN-based driver app calls. Each verifies the driver_session
