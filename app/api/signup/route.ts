@@ -1,6 +1,8 @@
 // app/api/signup/route.ts
 // POST: provision a brand-new organization for the signed-in, org-less user.
-// GATED: the caller's email must be present (and unused) in signup_invites.
+// An unused signup_invites row is honoured and burned as before; signed-in
+// users without an invite may also create their own org (self onboarding),
+// rate limited per user.
 // All writes use raw sql (the organizations table and users.org_id are not in
 // the Drizzle schema, so the typed builder cannot see them).
 //
@@ -15,69 +17,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
-import crypto from "crypto";
+import { provisionOrg, makeOwner } from "@/lib/provision-org";
+import { validateSettingsInput, DEFAULT_ORG_SETTINGS } from "@/lib/org-settings";
+import { overLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 50) || "org";
-}
-
-// Reserved because they would collide with real paths, or are confusing as a
-// customer identifier in a URL.
-const RESERVED_SLUGS = new Set([
-  "admin", "api", "app", "d", "driver", "drivers", "login", "logout",
-  "manager", "onboarding", "pending", "settings", "signup", "support",
-  "team", "www", "new", "null", "undefined",
-]);
-
-// Take the clean slug when it is free, and only add -2, -3 ... on an actual
-// collision. The old scheme always appended 6 characters of the UUID, which
-// produced links like /d/swift-towing-4b2e91/driver - hard to read out over
-// the radio and hard to type on a phone.
-//
-// `table` is a fixed string chosen by the caller below, never user input.
-async function uniqueSlug(
-  base: string,
-  table: "organizations" | "companies" | "locations"
-): Promise<string> {
-  let candidate = base;
-  if (RESERVED_SLUGS.has(candidate)) candidate = `${base}-1`;
-
-  for (let attempt = 0; attempt < 25; attempt++) {
-    let taken = false;
-
-    if (table === "organizations") {
-      const { rows } = await sql`
-        SELECT 1 FROM organizations WHERE lower(slug) = ${candidate} LIMIT 1;
-      `;
-      taken = rows.length > 0;
-    } else if (table === "companies") {
-      const { rows } = await sql`
-        SELECT 1 FROM companies WHERE lower(slug) = ${candidate} LIMIT 1;
-      `;
-      taken = rows.length > 0;
-    } else {
-      const { rows } = await sql`
-        SELECT 1 FROM locations WHERE lower(slug) = ${candidate} LIMIT 1;
-      `;
-      taken = rows.length > 0;
-    }
-
-    if (!taken) return candidate;
-    candidate = `${base}-${attempt + 2}`;
-  }
-
-  // 25 collisions on one name is implausible - fall back to a unique suffix
-  // rather than looping forever.
-  return `${base}-${crypto.randomUUID().slice(0, 6)}`;
-}
 
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
@@ -105,20 +50,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // GATE: email must be invited and unused.
+  // Invites are optional now; a used invite is still refused so it can't be replayed.
   const { rows: inviteRows } = await sql`
     SELECT email, used FROM signup_invites WHERE email = ${email} LIMIT 1;
-  `;
-  if (inviteRows.length === 0) {
+  `.catch(() => ({ rows: [] as Record<string, unknown>[] }));
+  const invited = inviteRows.length > 0 && inviteRows[0].used !== true;
+  if (!invited && (await overLimit(`onboard:user:${user.userId}`, 60 * 24, 3))) {
     return NextResponse.json(
-      { success: false, error: "Your email is not on the invite list. Contact us to request access." },
-      { status: 403 }
-    );
-  }
-  if (inviteRows[0].used === true) {
-    return NextResponse.json(
-      { success: false, error: "This invite has already been used." },
-      { status: 403 }
+      { success: false, error: "Too many attempts. Please try again tomorrow." },
+      { status: 429 }
     );
   }
 
@@ -130,6 +70,9 @@ export async function POST(req: NextRequest) {
     locationName?: string;
     city?: string;
     state?: string;
+    timezone?: string;
+    barcodePrefix?: string;
+    coreCharge?: number;
   };
   try {
     body = await req.json();
@@ -144,6 +87,13 @@ export async function POST(req: NextRequest) {
   const city = (body.city || "").trim() || null;
   const state = (body.state || "").trim() || null;
 
+  // Optional business settings; when omitted the org gets the defaults.
+  const hasSettings = body.timezone !== undefined || body.barcodePrefix !== undefined || body.coreCharge !== undefined;
+  const settings = validateSettingsInput({ ...DEFAULT_ORG_SETTINGS, ...body });
+  if (hasSettings && !settings.ok) {
+    return NextResponse.json({ success: false, error: settings.error }, { status: 400 });
+  }
+
   if (!orgName) {
     return NextResponse.json({ success: false, error: "Organization name is required." }, { status: 400 });
   }
@@ -155,66 +105,18 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 1. Organization. plan/status/created_at/supplier_name all default.
-    const orgId = crypto.randomUUID();
-    const orgSlug = await uniqueSlug(slugify(orgName), "organizations");
-    await sql`
-      INSERT INTO organizations (id, name, slug)
-      VALUES (${orgId}, ${orgName}, ${orgSlug});
-    `;
-
-    // 2. Company under the new org.
-    const companyId = crypto.randomUUID();
-    const companySlug = await uniqueSlug(slugify(companyName), "companies");
-    await sql`
-      INSERT INTO companies (id, org_id, slug, name, legal_entity, active)
-      VALUES (${companyId}, ${orgId}, ${companySlug}, ${companyName}, ${legalEntity}, true);
-    `;
-
-    // 3. First location under the company.
-    const locationId = crypto.randomUUID();
-    const locationSlug = await uniqueSlug(slugify(locationName), "locations");
-    await sql`
-      INSERT INTO locations (id, company_id, slug, name, city, state, active)
-      VALUES (${locationId}, ${companyId}, ${locationSlug}, ${locationName}, ${city}, ${state}, true);
-    `;
-
-    // 4. Promote the caller: set their org + owner role, link to the company.
-    await sql`
-      UPDATE users SET org_id = ${orgId}, role = 'owner' WHERE id = ${user.userId};
-    `;
-    await sql`
-      INSERT INTO user_companies (user_id, company_id)
-      VALUES (${user.userId}, ${companyId})
-      ON CONFLICT DO NOTHING;
-    `;
-
-    // 5. Seed this org's default battery types (idempotent on code).
-    //    NOTE: battery_types.code is globally unique in the current schema, so
-    //    these are shared reference rows. ON CONFLICT DO NOTHING means the first
-    //    org to sign up creates them and later orgs simply reuse them. If you
-    //    later make battery types per-org, add org_id here.
-    const defaultTypes: Array<[string, string, string, string, number, number]> = [
-      ["Alpha", "Standard flooded lead-acid", "85.00", "159.00", 20, 50],
-      ["Bravo", "Mid-range maintenance-free", "105.00", "189.00", 40, 100],
-      ["Charlie", "High-performance starting battery", "135.00", "229.00", 30, 60],
-      ["AGM", "Absorbent Glass Mat - premium", "175.00", "289.00", 15, 30],
-    ];
-    for (const [code, desc, cost, price, parMin, parMax] of defaultTypes) {
-      await sql`
-        INSERT INTO battery_types
-          (id, code, name, description, default_cost, default_price, par_level_min, par_level_max)
-        VALUES
-          (${crypto.randomUUID()}, ${code}, ${code}, ${desc},
-           ${cost}, ${price}, ${parMin}, ${parMax})
-        ON CONFLICT (code) DO NOTHING;
-      `;
-    }
+    const { orgId, companyId, locationId } = await provisionOrg({
+      orgName, companyName, legalEntity, locationName, city, state,
+      settings: hasSettings && settings.ok ? settings.value : null,
+    });
+    await makeOwner(user.userId, orgId, companyId);
 
     // 6. Burn the invite.
-    await sql`
-      UPDATE signup_invites SET used = true, used_at = now() WHERE email = ${email};
-    `;
+    if (invited) {
+      await sql`
+        UPDATE signup_invites SET used = true, used_at = now() WHERE email = ${email};
+      `;
+    }
 
     return NextResponse.json({
       success: true,

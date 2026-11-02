@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { US_TIMEZONES } from "@/lib/us-timezones";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -11,6 +12,9 @@ export default function OnboardingPage() {
   const [locationName, setLocationName] = useState("");
   const [city, setCity] = useState("");
   const [stateVal, setStateVal] = useState("");
+  const [timezone, setTimezone] = useState("America/Chicago");
+  const [barcodePrefix, setBarcodePrefix] = useState("BC");
+  const [coreCharge, setCoreCharge] = useState("25");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,6 +36,9 @@ export default function OnboardingPage() {
           locationName: locationName.trim(),
           city: city.trim(),
           state: stateVal.trim(),
+          timezone,
+          barcodePrefix: barcodePrefix.trim().toUpperCase(),
+          coreCharge: Number(coreCharge),
         }),
       });
       const json = await res.json();
@@ -101,6 +108,24 @@ export default function OnboardingPage() {
           <div style={{ width: 120 }}>
             <label style={label}>State</label>
             <input style={input} value={stateVal} onChange={(e) => setStateVal(e.target.value)} placeholder="AZ" />
+          </div>
+        </div>
+
+        <label style={label}>Business timezone</label>
+        <select style={input} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+          {US_TIMEZONES.map((z) => (
+            <option key={z.value} value={z.value}>{z.label}</option>
+          ))}
+        </select>
+
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <label style={label}>Barcode prefix</label>
+            <input style={input} value={barcodePrefix} maxLength={6} onChange={(e) => setBarcodePrefix(e.target.value.toUpperCase())} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={label}>Core charge ($)</label>
+            <input style={input} type="number" min="0" step="0.01" value={coreCharge} onChange={(e) => setCoreCharge(e.target.value)} />
           </div>
         </div>
 

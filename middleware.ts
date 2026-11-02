@@ -14,6 +14,8 @@ const PUBLIC_ROUTES = [
   "/driver/", // NOT bare "/driver" - that prefix also matched the admin /driver-sales page
   "/api/auth-driver",
   "/d/", // customer driver entry point: /d/<company>
+  "/signup", // public self sign-up page (NOT /api/signup, which needs a session)
+  "/api/public/signup",
 ];
 
 // APIs the PIN-based driver app calls. Each verifies the driver_session
