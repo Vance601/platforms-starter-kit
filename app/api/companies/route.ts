@@ -20,7 +20,7 @@ export async function GET() {
     }
 
     const { rows } = await sql`
-      SELECT id, name
+      SELECT id, name, slug, created_at
       FROM companies
       WHERE org_id = ${user.orgId}
       ORDER BY name ASC;
@@ -28,6 +28,8 @@ export async function GET() {
 
     const companies = rows.map((r) => ({
       id: r.id as string,
+      slug: (r.slug as string) || "",
+      createdAt: r.created_at ? new Date(r.created_at as string).toISOString() : null,
       name: (r.name as string) || "Unnamed company",
     }));
 

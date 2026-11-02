@@ -144,10 +144,10 @@ export default function AutoReordersPage() {
   const pendingCount = reorders?.filter((order) => order.status === "pending").length || 0
   const processedCount = reorders?.filter((order) => order.status === "processed").length || 0
   const cancelledCount = reorders?.filter((order) => order.status === "cancelled").length || 0
-  const camelbackCount =
-    reorders?.filter((order) => order.location === "Camelback" && order.status === "pending").length || 0
-  const broadwayCount =
-    reorders?.filter((order) => order.location === "Broadway" && order.status === "pending").length || 0
+  // Locations come from this org's own reorder data (no hardcoded store names).
+  const locations = Array.from(new Set((reorders || []).map((o) => o.location).filter(Boolean))).sort()
+  const pendingAt = (loc: string | null) =>
+    reorders?.filter((order) => order.location === loc && order.status === "pending").length || 0
 
   return (
     <div className="container mx-auto py-6">
@@ -177,8 +177,11 @@ export default function AutoReordersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Locations</SelectItem>
-                <SelectItem value="Broadway">Broadway</SelectItem>
-                <SelectItem value="Camelback">Camelback</SelectItem>
+                {locations.map((loc) => (
+                  <SelectItem key={loc} value={loc}>
+                    {loc}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -201,20 +204,15 @@ export default function AutoReordersPage() {
 
       {/* Combine Orders Buttons */}
       <div className="flex flex-wrap gap-2 mb-6">
-        <Button variant="outline" onClick={() => handleShowCombinedLocation("Broadway")} className="flex items-center">
-          <Layers className="mr-2 h-4 w-4" />
-          Combine Broadway Orders
-          <Badge variant="secondary" className="ml-2">
-            {broadwayCount}
-          </Badge>
-        </Button>
-        <Button variant="outline" onClick={() => handleShowCombinedLocation("Camelback")} className="flex items-center">
-          <Layers className="mr-2 h-4 w-4" />
-          Combine Camelback Orders
-          <Badge variant="secondary" className="ml-2">
-            {camelbackCount}
-          </Badge>
-        </Button>
+        {locations.map((loc) => (
+          <Button key={loc} variant="outline" onClick={() => handleShowCombinedLocation(loc)} className="flex items-center">
+            <Layers className="mr-2 h-4 w-4" />
+            Combine {loc} Orders
+            <Badge variant="secondary" className="ml-2">
+              {pendingAt(loc)}
+            </Badge>
+          </Button>
+        ))}
       </div>
 
       {/* Tabs */}
@@ -294,7 +292,7 @@ export default function AutoReordersPage() {
             <h2 className="text-xl font-semibold">
               Combined Orders for {locationSpecificView}
               <Badge variant="outline" className="ml-2">
-                {locationSpecificView === "Broadway" ? broadwayCount : camelbackCount} orders
+                {pendingAt(locationSpecificView)} orders
               </Badge>
             </h2>
             <Button variant="outline" onClick={() => setShowCombinedView(false)}>

@@ -33,7 +33,14 @@ export async function POST(req: Request) {
     const truckNumber = typeof body.truckNumber === "string" ? body.truckNumber.trim() : "";
     const yearModel   = typeof body.yearModel   === "string" ? body.yearModel.trim()   : "";
     const vinLast5    = typeof body.vinLast5    === "string" ? body.vinLast5.trim()    : "";
-    const companySlug = typeof body.companySlug === "string" ? body.companySlug.trim() : "phx";
+    const companySlug = typeof body.companySlug === "string" ? body.companySlug.trim() : "";
+
+    if (!companySlug) {
+      return NextResponse.json(
+        { success: false, error: "Company is required." },
+        { status: 400 }
+      );
+    }
 
     if (!truckNumber) {
       return NextResponse.json(
