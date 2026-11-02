@@ -10,5 +10,11 @@
       "destination": "/",
       "permanent": false
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/demo-cleanup",
+      "schedule": "0 9 * * *"
+    }
   ]
 }

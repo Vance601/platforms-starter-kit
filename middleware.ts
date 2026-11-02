@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   "/signup", // public self sign-up page (NOT /api/signup, which needs a session)
   "/api/public/signup",
   "/api/public/demo", // one-click demo (rate limited)
+  "/api/cron/demo-cleanup", // checks CRON_SECRET itself
 ];
 
 // APIs the PIN-based driver app calls. Each verifies the driver_session

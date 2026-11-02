@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDriverContext } from "@/lib/driver-session";
 import { normalizeVin, vinError } from "@/lib/vin";
 import { askClaudeJson } from "@/lib/anthropic";
+import { aiAllowed } from "@/lib/demo-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 45;
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest) {
     if (!data || !mediaType) return NextResponse.json({ success: false, error: "No photo received." }, { status: 400 });
     if (data.length > 6_000_000) return NextResponse.json({ success: false, error: "Photo is too large." }, { status: 413 });
 
+    if (!(await aiAllowed(ctx.orgId))) {
+      return NextResponse.json({ success: false, error: "Demo photo-reading limit reached for today. Type the VIN instead." }, { status: 429 });
+    }
     const out = await askClaudeJson([
       { type: "image", source: { type: "base64", media_type: mediaType, data } },
       { type: "text", text: 'This photo shows a vehicle VIN (windshield plate, door-jamb sticker or registration). Read the 17-character VIN exactly. VINs never contain I, O or Q. Reply with JSON only: {"vin": "<17 chars or empty if unreadable>"}' },
