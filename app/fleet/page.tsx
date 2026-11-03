@@ -339,7 +339,7 @@ export default function FleetPage() {
                           <div className={`rounded-md border p-3 ${hasCores ? "bg-emerald-50 border-emerald-200" : ""}`}>
                             <div className="flex items-center text-xs text-muted-foreground">
                               <RotateCcw className="mr-1 h-3 w-3" />
-                              Cores awaiting MBS
+                              Cores awaiting supplier return
                             </div>
                             <div className="text-xl font-semibold mt-1">{l.returned_cores}</div>
                           </div>

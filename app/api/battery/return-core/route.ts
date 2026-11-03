@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
       UPDATE core_returns
       SET status = 'returned',
           returned_at = NOW(),
-          notes = COALESCE(notes, '') || ${` | Returned to MBS by ${driver.name}`}
+          notes = COALESCE(notes, '') || ${` | Returned to supplier by ${driver.name}`}
       WHERE id = ${coreId} AND company_id = ${companyId}
     `;
 
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
         VALUES (
           ${crypto.randomUUID()}, ${batteryId}, 'sold', 'returned_core',
           ${battery.current_truck_id}, ${driverId},
-          ${battery.sold_on_call_number}, ${"Core returned to MBS"}
+          ${battery.sold_on_call_number}, ${"Core returned to supplier"}
         )
       `;
     }

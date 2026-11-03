@@ -208,7 +208,7 @@ export default function ReceiveOrderPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ border: "2px dashed #ccc", borderRadius: "8px", padding: "32px", textAlign: "center" }}>
             <p style={{ marginBottom: "12px", color: "#666" }}>
-              Upload an MBS invoice (PDF or photo). It will be read automatically — you review before anything is added.
+              Upload a supplier invoice (PDF or photo). It will be read automatically — you review before anything is added.
             </p>
             <input type="file" accept="application/pdf,image/*" onChange={onFileChange} />
             {fileName && <p style={{ marginTop: "12px", fontWeight: 600 }}>{fileName}</p>}

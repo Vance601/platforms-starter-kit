@@ -94,7 +94,7 @@ export default function DriverCoresPage() {
 
       setSuccessMsg(
         decision === "returned"
-          ? "Core marked returned to MBS."
+          ? "Core marked returned."
           : `Customer kept core — $${Number(data.chargeAmount).toFixed(2)} charge recorded.`
       );
       setKeptOpenId(null);
