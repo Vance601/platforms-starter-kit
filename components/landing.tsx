@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BrandLogo from "@/components/brand-logo";
 
 // Public landing page for signed-out visitors at "/". Rendered as a full-screen
 // layer so the staff sidebar from the app shell is not shown.
@@ -43,7 +44,7 @@ export default function Landing() {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100, overflow: "auto", background: "linear-gradient(180deg,#0f172a,#1e293b)", color: "#f8fafc" }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ fontWeight: 800, fontSize: 20 }}>🔋 Battery City</div>
+        <div style={{ fontWeight: 800, fontSize: 20 }}><BrandLogo size={28} /></div>
         <a href="/login" style={{ color: "#cbd5e1", textDecoration: "none", fontWeight: 600 }}>Log in</a>
       </header>
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 28px" }}>

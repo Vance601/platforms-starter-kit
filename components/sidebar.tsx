@@ -29,6 +29,7 @@ import { signOut } from "next-auth/react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import BrandLogo from "@/components/brand-logo"
 
 export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
   const orgName = useOrgName()
@@ -52,7 +53,7 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
     >
       <div className="space-y-2 py-2">
         <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">{orgName}</h2>
+          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight"><BrandLogo size={22} text={orgName} /></h2>
           <div className="space-y-0.5">
             <Button variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
               <Link href="/">
