@@ -52,7 +52,9 @@ export default function LoginPage() {
       const json = await res.json().catch(() => ({}));
       if (json?.success) {
         // Full page load so the new cookie is sent with the next request.
-        window.location.href = callbackUrl;
+        window.location.href = json.mustChangePassword
+          ? `/account/password?first=1&next=${encodeURIComponent(callbackUrl)}`
+          : callbackUrl;
       } else {
         setError(json?.error || "Email or password is incorrect.");
       }

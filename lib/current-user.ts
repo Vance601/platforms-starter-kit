@@ -19,7 +19,8 @@ export type SessionType = "github" | "manager" | null;
 export type CurrentUser = {
   userId: string;
   sessionType: SessionType;
-  role: string | null;        // e.g. 'owner' | 'manager'
+  role: string | null;        // e.g. 'owner' | 'manager' ('admin' reads as 'manager' here)
+  dbRole: string | null;      // the stored role, incl. 'admin'
   orgId: string | null;       // tenant boundary (added in step 2)
   companyIds: string[];       // companies this user may see
 };
@@ -88,9 +89,13 @@ async function loadScope(userId: string): Promise<{
   // Role from users table (this column exists today).
   try {
     const { rows } = await sql`
-      SELECT role FROM users WHERE id = ${userId} LIMIT 1;
+      SELECT role::text AS role, status::text AS status FROM users WHERE id = ${userId} LIMIT 1;
     `;
-    if (rows.length > 0) role = (rows[0].role as string) ?? null;
+    if (rows.length > 0) {
+      role = (rows[0].role as string) ?? null;
+      // Deactivated users lose access immediately, even with a live cookie.
+      if (rows[0].status && rows[0].status !== "active") role = "__inactive__";
+    }
   } catch {
     // ignore
   }
@@ -125,10 +130,14 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!id) return null;
 
   const scope = await loadScope(id.userId);
+  if (scope.role === "__inactive__") return null;
   return {
     userId: id.userId,
     sessionType: id.sessionType,
-    role: scope.role,
+    // Admins can do everything a manager can, so existing owner/manager
+    // gates keep working; user management checks dbRole.
+    role: scope.role === "admin" ? "manager" : scope.role,
+    dbRole: scope.role,
     orgId: scope.orgId,
     companyIds: scope.companyIds,
   };
