@@ -47,7 +47,7 @@ export default function Landing() {
       <div style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}>
       {/* Ghost hero: black AMG GT 53, hood up, glowing red battery. Faded behind
           a navy gradient so the headline and buttons stay readable. */}
-      <div aria-hidden="true" className="absolute right-0 bottom-0 w-full opacity-30 md:w-[52%] md:opacity-60" style={{ zIndex: -1, pointerEvents: "none", aspectRatio: "16 / 9", WebkitMaskImage: "radial-gradient(ellipse 70% 75% at 62% 50%,#000 55%,transparent 100%)", maskImage: "radial-gradient(ellipse 70% 75% at 62% 50%,#000 55%,transparent 100%)" }}>
+      <div aria-hidden="true" className="absolute right-0 bottom-0 w-full opacity-30 md:w-[52%] md:opacity-60" style={{ zIndex: -1, pointerEvents: "none", aspectRatio: "16 / 9", WebkitMaskImage: "radial-gradient(ellipse 60% 62% at 62% 48%,#000 50%,transparent 100%)", maskImage: "radial-gradient(ellipse 60% 62% at 62% 48%,#000 50%,transparent 100%)" }}>
         <Image src="/hero-amg.webp" alt="" fill priority sizes="(min-width: 768px) 52vw, 100vw" quality={70} className="object-contain object-right-bottom" />
       </div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", maxWidth: 1100, margin: "0 auto" }}>
