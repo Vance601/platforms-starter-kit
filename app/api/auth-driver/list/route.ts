@@ -39,13 +39,15 @@ export async function GET(req: NextRequest) {
         LIMIT 1;
       `;
       orgRow = rows[0] as typeof orgRow;
-    } else {
-      // Legacy company link - resolve up to its organization.
+    }
+    if (!orgRow) {
+      // Company link (or an org link that is really a company slug) -
+      // resolve up to its organization. - resolve up to its organization.
       const { rows } = await sql`
         SELECT o.id, o.name, o.slug
         FROM companies c
         JOIN organizations o ON o.id = c.org_id
-        WHERE lower(c.slug) = ${companySlug}
+        WHERE lower(c.slug) = ${companySlug || orgSlug}
         LIMIT 1;
       `;
       orgRow = rows[0] as typeof orgRow;

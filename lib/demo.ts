@@ -103,6 +103,8 @@ export async function createDemoOrg(creatorIp: string | null = null): Promise<De
     console.error("[demo] battery/sales seed incomplete", e)
   );
 
+  await ensureDemoDeliveries(org.orgId).catch((e) => console.error("[demo] delivery seed", e));
+
   await sql`
     INSERT INTO demo_orgs (org_id, owner_user_id, company_slug, driver_name, driver_pin, creator_ip)
     VALUES (${org.orgId}, ${userId}, ${org.companySlug}, ${DRIVERS[0]}, ${driverPin}, ${creatorIp});`;
@@ -209,4 +211,29 @@ export async function liveDemoOwner(where: { userId?: string; ip?: string }): Pr
     return rows[0]?.owner_user_id ?? null;
   }
   return null;
+}
+
+// Demo orgs only: give unlabelled demo stock a sample delivery receipt so
+// Print Labels has something to show. Idempotent; also backfills older demos.
+export async function ensureDemoDeliveries(orgId: string): Promise<void> {
+  if (!(await isDemoOrg(orgId))) return;
+  const { rows: cos } = await sql`
+    SELECT c.id AS company_id, (SELECT l.id FROM locations l WHERE l.company_id = c.id ORDER BY l.created_at LIMIT 1) AS location_id
+    FROM companies c WHERE c.org_id = ${orgId}`;
+  for (const c of cos) {
+    const { rows: have } = await sql`SELECT 1 FROM delivery_receipts WHERE company_id = ${c.company_id} LIMIT 1`;
+    if (have.length) continue;
+    const { rows: cnt } = await sql`
+      SELECT count(*)::int AS n FROM batteries WHERE company_id = ${c.company_id} AND delivery_receipt_id IS NULL`;
+    if (!cnt[0]?.n) continue;
+    const receiptId = crypto.randomUUID();
+    await sql`
+      INSERT INTO delivery_receipts (id, company_id, location_id, supplier, receipt_number, receipt_date,
+                                     total_units, core_charges, notes)
+      VALUES (${receiptId}, ${c.company_id}, ${c.location_id}, 'Desert Battery Supply (demo)', 'DEMO-RCV-1001',
+              now() - interval '10 days', ${cnt[0].n}, 0, 'Sample delivery for the demo');`;
+    await sql`
+      UPDATE batteries SET delivery_receipt_id = ${receiptId}
+      WHERE company_id = ${c.company_id} AND delivery_receipt_id IS NULL`;
+  }
 }
