@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { US_TIMEZONES } from "@/lib/us-timezones";
+import BrandLogo from "@/components/brand-logo";
 
 export default function SignupPage() {
   const [f, setF] = useState({
@@ -50,6 +51,7 @@ export default function SignupPage() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f6f7f9", padding: 24 }}>
       <div style={{ background: "#fff", padding: 36, borderRadius: 14, maxWidth: 520, width: "100%", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
+        <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 14 }}><BrandLogo size={28} /></div>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>Create your Battery City account</h1>
         <p style={{ color: "#666", fontSize: 14, marginBottom: 22 }}>
           Track batteries, trucks, drivers, sales and warranties. Already have an account? <a href="/login" style={{ color: "#2563eb" }}>Log in</a>
