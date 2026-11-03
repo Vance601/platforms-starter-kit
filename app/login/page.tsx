@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
+import TryDemoButton from "@/components/try-demo-button";
 
 // Primary sign-in page for battery-city.com.
 //
@@ -137,6 +138,17 @@ export default function LoginPage() {
             </a>
           </p>
         </div>
+
+        <div className="mt-6 space-y-3 rounded-xl border border-slate-700 p-4">
+          <p className="text-center text-sm text-slate-300">
+            New to Battery City?{" "}
+            <a href="/signup" className="font-medium text-blue-400 underline">Sign up</a>
+          </p>
+          <TryDemoButton />
+        </div>
+        <p className="mt-4 text-center text-sm">
+          <a href="/" className="text-slate-400 underline">← Back to home</a>
+        </p>
 
         {/* Driver path -- drivers use a PIN, not a password. */}
         <p className="mt-6 text-center text-sm text-slate-400">
