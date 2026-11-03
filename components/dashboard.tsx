@@ -26,6 +26,7 @@ type Summary = {
   inWarehouse: number
   onTruck: number
   returnedCore: number
+  sold?: number
   byType: Record<string, number>
   byLocation: Record<string, number>
   byStatus: Record<string, number>
@@ -64,6 +65,7 @@ type Charts = {
     unitsSold: number
     unitsSoldAllTime: number
     returnedCore: number
+    sold?: number
     orphanedBatteries: number
   }
 }
@@ -307,7 +309,7 @@ export default function Dashboard() {
   const inWarehouse = summary?.inWarehouse ?? 0
   const onTruck = summary?.onTruck ?? 0
   const returnedCore = summary?.returnedCore ?? 0
-  const sold = summary?.byStatus?.sold ?? 0
+  const sold = summary?.sold ?? summary?.byStatus?.sold ?? 0
   const byLocation = summary?.byLocation ?? {}
   const byType = summary?.byType ?? {}
   const typeLocation = summary?.typeLocation ?? {}
@@ -352,14 +354,15 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card className="shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 py-3 px-4">
-                <CardTitle className="text-base font-medium">Total Batteries</CardTitle>
+                <CardTitle className="text-base font-medium">Available to Sell</CardTitle>
                 <Package className="h-5 w-5 text-blue-500" />
               </CardHeader>
               <CardContent className="pt-0 px-4 pb-3">
                 <div className="text-2xl font-bold">{totalBatteries}</div>
                 <p className="text-sm text-muted-foreground">
-                  {inWarehouse} in warehouse, {onTruck} on trucks{sold ? `, ${sold} sold` : ""}
+                  {inWarehouse} in warehouse + {onTruck} on trucks
                 </p>
+                <p className="text-sm text-muted-foreground" data-testid="sold-count">{sold} sold (not counted)</p>
               </CardContent>
             </Card>
 

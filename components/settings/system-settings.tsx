@@ -9,10 +9,13 @@ import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
 import { Save, RefreshCw } from "lucide-react"
+import { useOrgName } from "@/lib/use-org-name"
 
 export function SystemSettings() {
+  // Company name defaults to this org's own name (not the app brand).
+  const orgName = useOrgName()
   const [settings, setSettings] = useState({
-    companyName: "Battery City",
+    companyName: orgName,
     lowStockThreshold: 5,
     defaultLocation: "",
     enableNotifications: true,
@@ -38,6 +41,9 @@ export function SystemSettings() {
       })
       .catch(() => {})
   }, [])
+  useEffect(() => {
+    setSettings((s) => ({ ...s, companyName: orgName }))
+  }, [orgName])
 
   const handleSaveSettings = () => {
     if (settings.defaultLocation) localStorage.setItem("duggers.settings.defaultLocation", settings.defaultLocation)
@@ -51,7 +57,7 @@ export function SystemSettings() {
   const handleResetSettings = () => {
     if (confirm("Are you sure you want to reset all settings to default values?")) {
       setSettings({
-        companyName: "Battery City",
+        companyName: orgName,
         lowStockThreshold: 5,
         defaultLocation: "",
         enableNotifications: true,

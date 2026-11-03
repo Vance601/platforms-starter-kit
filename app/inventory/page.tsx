@@ -93,12 +93,12 @@ export default function InventoryPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center">
                   <Package className="mr-2 h-5 w-5 text-blue-500" />
-                  Total Batteries
+                  Available to Sell
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold">{data.total}</div>
-                <p className="text-sm text-muted-foreground">All types, all locations</p>
+                <p className="text-sm text-muted-foreground">In warehouses and on trucks (sold, cores and returns not counted)</p>
               </CardContent>
             </Card>
 
