@@ -10,6 +10,7 @@ const ITEMS: NavItem[] = [
   { href: "/driver/load", label: "Load" },
   { href: "/driver/sell", label: "Sell" },
   { href: "/driver/cores", label: "Cores" },
+  { href: "/driver/pin", label: "PIN" },
 ];
 
 export default function DriverNav() {

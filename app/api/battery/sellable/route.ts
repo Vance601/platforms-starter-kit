@@ -56,12 +56,13 @@ export async function GET(req: NextRequest) {
     let batteries: Record<string, unknown>[] = [];
     if (claimedTruck) {
       const { rows } = await sql`
-        SELECT id, barcode, serial_number, status
-        FROM batteries
-        WHERE status = 'on_truck'
-          AND truck_id = ${claimedTruck.id}
-          AND company_id = ${driver.company_id}
-        ORDER BY barcode;
+        SELECT b.id, b.barcode, b.serial_number, b.status, bm.code AS model_code
+        FROM batteries b
+        LEFT JOIN battery_models bm ON bm.id = b.battery_model_id
+        WHERE b.status = 'on_truck'
+          AND b.truck_id = ${claimedTruck.id}
+          AND b.company_id = ${driver.company_id}
+        ORDER BY b.barcode;
       `;
       batteries = rows;
     }

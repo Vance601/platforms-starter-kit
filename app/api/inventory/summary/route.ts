@@ -15,6 +15,8 @@ export const maxDuration = 30;
 // Previously this route only checked "is signed in", which meant any signed-in
 // user would have seen every organization's stock. Fail-closed: no orgId
 // returns zeros rather than another tenant's numbers.
+const AVAILABLE = new Set(["in_warehouse", "on_truck"]);
+
 export async function GET() {
   try {
     const user = await getCurrentUser();
@@ -68,10 +70,14 @@ export async function GET() {
       const status = r.status || "unknown";
       const n = r.count || 0;
 
+      byStatus[status] = (byStatus[status] || 0) + n;
+
+      // Totals, per-type and per-location counts are stock available to sell:
+      // in a warehouse or on a truck. Sold, cores and returns are only in byStatus.
+      if (!AVAILABLE.has(status)) continue;
       total += n;
       byType[type] = (byType[type] || 0) + n;
       byLocation[loc] = (byLocation[loc] || 0) + n;
-      byStatus[status] = (byStatus[status] || 0) + n;
 
       if (!typeLocation[type]) typeLocation[type] = {};
       typeLocation[type][loc] = (typeLocation[type][loc] || 0) + n;
@@ -80,6 +86,7 @@ export async function GET() {
     const inWarehouse = byStatus["in_warehouse"] || 0;
     const onTruck = byStatus["on_truck"] || 0;
     const returnedCore = byStatus["returned_core"] || 0;
+    const sold = byStatus["sold"] || 0;
 
     return NextResponse.json({
       success: true,
@@ -87,6 +94,7 @@ export async function GET() {
       inWarehouse,
       onTruck,
       returnedCore,
+      sold,
       byType,
       byLocation,
       byStatus,

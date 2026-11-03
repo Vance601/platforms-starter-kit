@@ -53,6 +53,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // This route is only for the forced first-login reset (PIN still 0000).
+    // Any other change goes through /api/auth-driver/change-pin, which needs the current PIN.
+    const { rows: cur } = await sql`SELECT pin_hash FROM drivers WHERE id = ${driverId} LIMIT 1;`;
+    const stored = String(cur[0]?.pin_hash || "");
+    const [salt, h] = stored.split(":");
+    const isPlaceholder = !!salt && !!h && crypto.scryptSync("0000", salt, 64).toString("hex") === h;
+    if (!isPlaceholder) {
+      return NextResponse.json(
+        { success: false, error: "Use Change PIN and enter your current PIN." },
+        { status: 403 }
+      );
+    }
+
     const pinHash = hashPin(newPin);
 
     const { rowCount } = await sql`

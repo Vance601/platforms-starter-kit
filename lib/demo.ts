@@ -1,6 +1,7 @@
 // Demo provisioning: an isolated, expiring org with fake data. Everything is
 // created fresh under a new org id; nothing existing is read or changed.
 import { sql } from "@vercel/postgres";
+import { generateNextBarcode } from "@/lib/barcode";
 import crypto from "crypto";
 import { provisionOrg, makeOwner, ensureDemoColumns } from "@/lib/provision-org";
 import { ensureSaleTables } from "@/lib/sale-records";
@@ -113,7 +114,7 @@ export async function createDemoOrg(creatorIp: string | null = null): Promise<De
 }
 
 async function seedBatteriesAndSales(
-  org: { orgId: string; companyId: string; locationId: string },
+  org: { orgId: string; companyId: string; locationId: string; companySlug: string },
   tag: string,
   truckIds: string[],
   driverIds: string[]
@@ -132,7 +133,8 @@ async function seedBatteriesAndSales(
     n++;
     const m = models[n % models.length];
     const id = crypto.randomUUID();
-    const barcode = `LV-${tag.toUpperCase()}-${String(n).padStart(4, "0")}`;
+    // Same format as batteries added or received later (per-org prefix, company, model, date, seq).
+    const barcode = await generateNextBarcode(org.companySlug, String(m.code), new Date(Date.now() - 10 * 86400000));
     await sql`
       INSERT INTO batteries (id, barcode, battery_type_id, battery_model_id, company_id, location_id,
                              status, cost, received_at, created_at)

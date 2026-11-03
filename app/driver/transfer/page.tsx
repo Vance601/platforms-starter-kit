@@ -21,7 +21,20 @@ export default function TransferPage() {
   const [claiming, setClaiming] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
+  // Stock on the truck this driver currently holds (same source as the Sell screen).
+  const [stock, setStock] = useState<{ truck: { truck_number: string } | null; batteries: { id: string; barcode: string; model_code?: string | null }[] } | null>(null);
+  async function loadStock() {
+    try {
+      const r = await fetch("/api/battery/sellable", { cache: "no-store" });
+      const d = await r.json();
+      if (d?.success) setStock({ truck: d.claimedTruck ?? null, batteries: d.batteries ?? [] });
+    } catch {
+      /* stock panel is informational */
+    }
+  }
+
   async function loadTrucks() {
+    loadStock();
     setLoading(true);
     setError("");
     try {
@@ -158,6 +171,29 @@ export default function TransferPage() {
         <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
           Scan the truck&apos;s QR code, or tap it below.
         </p>
+
+        {stock?.truck && (
+          <div
+            data-testid="truck-stock"
+            style={{ border: "1px solid #334155", background: "#1e293b", borderRadius: 12, padding: 14, marginBottom: 16 }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
+              On your truck #{stock.truck.truck_number}: {stock.batteries.length} batter{stock.batteries.length === 1 ? "y" : "ies"}
+            </div>
+            {stock.batteries.length === 0 ? (
+              <div style={{ fontSize: 13, color: "#94a3b8" }}>No batteries loaded yet. Use Load to add some.</div>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0, fontSize: 13, fontFamily: "ui-monospace, monospace" }}>
+                {stock.batteries.map((b) => (
+                  <li key={b.id} style={{ padding: "4px 0", borderTop: "1px solid #334155", wordBreak: "break-all" }}>
+                    {b.barcode}
+                    {b.model_code ? <span style={{ color: "#94a3b8", fontFamily: "system-ui" }}> · {b.model_code}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <div style={{ marginBottom: 16 }}>
           <BarcodeReader onScan={handleScan} label="Scan truck QR code" />
