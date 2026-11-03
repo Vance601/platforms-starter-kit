@@ -25,7 +25,10 @@ export async function generateNextBarcode(
   batteryModelCode: string,
   date: Date = new Date()
 ): Promise<string> {
-  const companyCode = COMPANY_CODE_MAP[companySlug];
+  // Duggers' legacy codes stay fixed; every other company derives one from its slug.
+  const companyCode =
+    COMPANY_CODE_MAP[companySlug] ??
+    (companySlug.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || undefined);
   if (!companyCode) {
     throw new Error(`Unknown company slug: ${companySlug}`);
   }
