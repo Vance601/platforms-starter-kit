@@ -48,7 +48,7 @@ export default function Landing() {
       </header>
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 28px" }}>
         <h1 style={{ fontSize: 46, lineHeight: 1.1, fontWeight: 800, maxWidth: 760, margin: 0 }}>
-          Battery inventory, roadside sales and warranties for towing and roadside fleets.
+          {"Battery inventory tracking & warranties plus sales reports"}
         </h1>
         <p style={{ fontSize: 19, color: "#cbd5e1", maxWidth: 680, marginTop: 20 }}>
           Know where every battery is, sell from the truck in under a minute, and never lose a core or a warranty again.
