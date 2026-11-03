@@ -8,8 +8,8 @@ import AppShell from "@/components/app-shell"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Dugger's Battery Program",
-  description: "Management system for Dugger's battery technicians",
+  title: "Battery City",
+  description: "Battery inventory, fleet and warranty management",
     generator: 'v0.dev'
 }
 

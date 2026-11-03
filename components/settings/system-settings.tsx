@@ -12,7 +12,7 @@ import { Save, RefreshCw } from "lucide-react"
 
 export function SystemSettings() {
   const [settings, setSettings] = useState({
-    companyName: "Duggers Battery",
+    companyName: "Battery City",
     lowStockThreshold: 5,
     defaultLocation: "",
     enableNotifications: true,
@@ -51,7 +51,7 @@ export function SystemSettings() {
   const handleResetSettings = () => {
     if (confirm("Are you sure you want to reset all settings to default values?")) {
       setSettings({
-        companyName: "Duggers Battery",
+        companyName: "Battery City",
         lowStockThreshold: 5,
         defaultLocation: "",
         enableNotifications: true,
