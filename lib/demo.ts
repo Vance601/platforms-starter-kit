@@ -22,6 +22,7 @@ export function ensureDemoTables() {
           driver_pin    TEXT NOT NULL,
           created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
         );`;
+      await sql`ALTER TABLE demo_orgs ADD COLUMN IF NOT EXISTS creator_ip TEXT`;
     })().catch((e) => { ready = null; throw e; });
   }
   return ready;
@@ -56,7 +57,7 @@ const CUSTOMERS: [string, string, string, string, string][] = [
 
 export type DemoResult = { orgId: string; userId: string; companySlug: string; driverName: string; driverPin: string };
 
-export async function createDemoOrg(): Promise<DemoResult> {
+export async function createDemoOrg(creatorIp: string | null = null): Promise<DemoResult> {
   await ensureDemoTables();
   const tag = crypto.randomBytes(3).toString("hex");
   const org = await provisionOrg({
@@ -103,8 +104,8 @@ export async function createDemoOrg(): Promise<DemoResult> {
   );
 
   await sql`
-    INSERT INTO demo_orgs (org_id, owner_user_id, company_slug, driver_name, driver_pin)
-    VALUES (${org.orgId}, ${userId}, ${org.companySlug}, ${DRIVERS[0]}, ${driverPin});`;
+    INSERT INTO demo_orgs (org_id, owner_user_id, company_slug, driver_name, driver_pin, creator_ip)
+    VALUES (${org.orgId}, ${userId}, ${org.companySlug}, ${DRIVERS[0]}, ${driverPin}, ${creatorIp});`;
 
   return { orgId: org.orgId, userId, companySlug: org.companySlug, driverName: DRIVERS[0], driverPin };
 }
@@ -189,4 +190,23 @@ async function seedBatteriesAndSales(
               ((now() - make_interval(days => ${daysAgo}))::date + interval '36 months')::date,
               now() - make_interval(days => ${daysAgo}));`;
   }
+}
+
+// Owner user id of a live (non-expired) demo org, or null.
+export async function liveDemoOwner(where: { userId?: string; ip?: string }): Promise<string | null> {
+  await ensureDemoTables();
+  if (where.userId) {
+    const { rows } = await sql`
+      SELECT d.owner_user_id FROM demo_orgs d JOIN organizations o ON o.id::text = d.org_id
+      WHERE d.owner_user_id = ${where.userId} AND o.is_demo = true AND o.demo_expires_at > now() LIMIT 1`;
+    return rows[0]?.owner_user_id ?? null;
+  }
+  if (where.ip) {
+    const { rows } = await sql`
+      SELECT d.owner_user_id FROM demo_orgs d JOIN organizations o ON o.id::text = d.org_id
+      WHERE d.creator_ip = ${where.ip} AND o.is_demo = true AND o.demo_expires_at > now()
+      ORDER BY d.created_at DESC LIMIT 1`;
+    return rows[0]?.owner_user_id ?? null;
+  }
+  return null;
 }
