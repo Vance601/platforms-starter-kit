@@ -132,7 +132,7 @@ export default function WarrantyReportPage() {
   if (!loaded) {
     return (
       <div className="max-w-md space-y-4 py-6">
-        <h1 className="text-2xl font-bold">Warranty Report — MBS Claims</h1>
+        <h1 className="text-2xl font-bold">Warranty Report — Supplier Claims</h1>
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
@@ -153,7 +153,7 @@ export default function WarrantyReportPage() {
   return (
     <div className="space-y-6 py-2">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Warranty Report — MBS Claims</h1>
+        <h1 className="text-2xl font-bold">Warranty Report — Supplier Claims</h1>
         <div className="flex gap-2">
           <button
             onClick={loadReport}
@@ -171,14 +171,14 @@ export default function WarrantyReportPage() {
                 : "bg-blue-600 text-white")
             }
           >
-            Export for MBS
+            Export for supplier
           </button>
         </div>
       </div>
 
       <p className="text-sm text-muted-foreground">
-        Every warranty replacement is a claim against MBS for the wholesale cost you paid.
-        Enter the wholesale cost for each, then export to send MBS.
+        Every warranty replacement is a claim against your supplier for the wholesale cost you paid.
+        Enter the wholesale cost for each, then export to send to your supplier.
       </p>
 
       {error ? (
@@ -195,7 +195,7 @@ export default function WarrantyReportPage() {
         </div>
         <div className="rounded-lg border px-4 py-3 text-center">
           <p className="text-2xl font-bold">${totalOwed.toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground">Total Owed by MBS</p>
+          <p className="text-xs text-muted-foreground">Total Owed by Supplier</p>
         </div>
       </div>
 

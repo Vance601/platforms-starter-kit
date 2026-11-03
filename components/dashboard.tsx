@@ -307,6 +307,7 @@ export default function Dashboard() {
   const inWarehouse = summary?.inWarehouse ?? 0
   const onTruck = summary?.onTruck ?? 0
   const returnedCore = summary?.returnedCore ?? 0
+  const sold = summary?.byStatus?.sold ?? 0
   const byLocation = summary?.byLocation ?? {}
   const byType = summary?.byType ?? {}
   const typeLocation = summary?.typeLocation ?? {}
@@ -357,7 +358,7 @@ export default function Dashboard() {
               <CardContent className="pt-0 px-4 pb-3">
                 <div className="text-2xl font-bold">{totalBatteries}</div>
                 <p className="text-sm text-muted-foreground">
-                  {inWarehouse} in warehouse, {onTruck} on trucks
+                  {inWarehouse} in warehouse, {onTruck} on trucks{sold ? `, ${sold} sold` : ""}
                 </p>
               </CardContent>
             </Card>

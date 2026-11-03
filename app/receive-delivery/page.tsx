@@ -196,7 +196,7 @@ export default function ReceiveDeliveryPage() {
       setDoneSummary(
         `Delivery receipt ${receiptNumber}: ${logged} batteries added to inventory (no cost yet). Cores — charged ${
           parseInt(coreCharged, 10) || 0
-        }, credited ${parseInt(coreCredited, 10) || 0}, net owed ${coreNet}. Cost is filled in when the MBS invoice is received.`
+        }, credited ${parseInt(coreCredited, 10) || 0}, net owed ${coreNet}. Cost is filled in when the supplier invoice is received.`
       );
       setStep("done");
     } catch (e) {
@@ -212,7 +212,7 @@ export default function ReceiveDeliveryPage() {
       </Link>
       <h1 style={{ marginBottom: "8px" }}>Delivery Receipt (Day 0)</h1>
       <p style={{ color: "#666", marginTop: 0, fontSize: 14 }}>
-        Upload the supplier delivery receipt. Batteries are added to inventory now, with no cost — pricing is filled in later when the MBS invoice arrives.
+        Upload the supplier delivery receipt. Batteries are added to inventory now, with no cost — pricing is filled in later when the supplier invoice arrives.
       </p>
 
       {error && (
@@ -275,7 +275,7 @@ export default function ReceiveDeliveryPage() {
             </label>
             <div style={{ gridColumn: "1 / -1", background: coreNet > 0 ? "#fff4f4" : "#f0fff4", border: "1px solid " + (coreNet > 0 ? "#f3c0c0" : "#bfe6c9"), borderRadius: 6, padding: "10px 12px" }}>
               <strong>Net cores owed: {coreNet}</strong>
-              <span style={{ color: "#666", fontSize: 13 }}> (charged {parseInt(coreCharged, 10) || 0} − credited {parseInt(coreCredited, 10) || 0}). Enter both numbers from the receipt. This net reconciles against the MBS invoice.</span>
+              <span style={{ color: "#666", fontSize: 13 }}> (charged {parseInt(coreCharged, 10) || 0} − credited {parseInt(coreCredited, 10) || 0}). Enter both numbers from the receipt. This net reconciles against the supplier invoice.</span>
             </div>
             <label style={{ gridColumn: "1 / -1" }}>
               Location (where these batteries land)

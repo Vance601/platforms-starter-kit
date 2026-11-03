@@ -82,14 +82,14 @@ export async function GET() {
         headline = `${driver} sold ${barcode}${call}`;
       } else if (from === "sold" && to === "returned_core") {
         kind = "core_return_battery";
-        headline = `${driver} returned core ${barcode} to MBS`;
+        headline = `${driver} returned core ${barcode} to supplier`;
       } else if (from == null && to === "in_warehouse") {
         // Battery received into warehouse from MBS (no prior status).
         kind = "other";
         const invMatch = (m.notes as string | null)?.match(/invoice\s+([^\s|]+)/i);
         const invShort = invMatch ? invMatch[1].slice(0, 8) : null;
         headline = `${barcode} received into warehouse`;
-        detail = invShort ? `MBS invoice ${invShort}…` : detail;
+        detail = invShort ? `Supplier invoice ${invShort}…` : detail;
       }
 
       events.push({
@@ -111,7 +111,7 @@ export async function GET() {
         kind: isKept ? "core_kept" : "core_returned",
         headline: isKept
           ? `Customer kept core for ${barcode}${amt ? ` — $${amt} charge recorded` : ""}`
-          : `Core for ${barcode} marked returned to MBS`,
+          : `Core for ${barcode} marked returned to supplier`,
         detail: (c.notes as string | null) || null,
       });
     }

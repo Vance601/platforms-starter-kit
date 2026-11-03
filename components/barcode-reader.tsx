@@ -281,6 +281,7 @@ export function BarcodeReader({
         <input
           value={manual}
           onChange={(e) => setManual(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submitManual(); } }}
           placeholder="Or type the code"
           autoCapitalize="characters"
           autoCorrect="off"
