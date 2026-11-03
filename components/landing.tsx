@@ -35,7 +35,7 @@ export default function Landing() {
 
   const btn: React.CSSProperties = { display: "inline-block", padding: "14px 26px", borderRadius: 10, fontSize: 16, fontWeight: 600, textDecoration: "none", border: "none", cursor: "pointer" };
   const features: [string, string][] = [
-    ["Scan to sell", "Drivers scan the battery and the VIN at the roadside; the sale, customer and warranty are recorded in one step."],
+    ["Scan to sell", "Drivers scan the battery and the VIN at the roadside or in the shop; the sale, customer and warranty are recorded in one step."],
     ["Every battery tracked", "Warehouse to truck to customer to core return, with barcode labels and a full audit trail."],
     ["Fleet and drivers", "PIN logins for drivers, per-truck stock, transfers and low-stock alerts."],
     ["Warranty lookup", "Customers and staff look up any warranty by VIN or phone in seconds."],
@@ -52,7 +52,7 @@ export default function Landing() {
           {"Battery inventory tracking & warranties plus sales reports"}
         </h1>
         <p style={{ fontSize: 19, color: "#cbd5e1", maxWidth: 680, marginTop: 20 }}>
-          Know where every battery is, sell from the truck in under a minute, and never lose a core or a warranty again.
+          Know where every battery is, sell from the truck or shop in under a minute, and never lose a core or a warranty again.
         </p>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 32 }}>
           <a href="/signup" style={{ ...btn, background: "#22c55e", color: "#0f172a" }}>Sign up</a>
