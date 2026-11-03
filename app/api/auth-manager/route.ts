@@ -4,6 +4,7 @@ import { logAudit } from "@/lib/audit";
 
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { cookieDomainFor, requestHost } from "@/lib/manager-session";
 import { scryptSync, timingSafeEqual } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -29,8 +30,6 @@ const SESSION_MAX_AGE = 60 * 60 * 12; // 12 hours
 
 // In production, scope the cookie to the apex + all subdomains so it survives
 // www <-> apex navigation. Undefined in dev (host-only on localhost).
-const COOKIE_DOMAIN =
-  process.env.NODE_ENV === "production" ? ".battery-city.com" : undefined;
 
 export async function POST(req: NextRequest) {
   try {
@@ -91,7 +90,7 @@ export async function POST(req: NextRequest) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      domain: COOKIE_DOMAIN,
+      domain: cookieDomainFor(requestHost(req)),
       maxAge: SESSION_MAX_AGE,
     });
 
@@ -104,14 +103,14 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   const res = NextResponse.json({ success: true });
   res.cookies.set("manager_session", "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    domain: COOKIE_DOMAIN,
+    domain: cookieDomainFor(requestHost(req)),
     maxAge: 0,
   });
   return res;

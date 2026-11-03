@@ -10,7 +10,11 @@ export default function TryDemoButton({ className = "" }: { className?: string }
     try {
       const r = await fetch("/api/public/demo", { method: "POST" });
       const d = await r.json().catch(() => ({}));
-      if (r.ok && d?.success) { window.location.href = d.redirect || "/"; return; }
+      if (r.ok && d?.success) {
+        const chk = await fetch("/api/demo/info", { cache: "no-store" }).catch(() => null);
+        if (!chk || !chk.ok) { setErr("The demo started, but your browser didn't keep the sign-in. Please open https://www.battery-city.com and try again."); return; }
+        window.location.href = d.redirect || "/"; return;
+      }
       setErr(d?.error || "The demo is not available right now. Please try again shortly.");
     } catch { setErr("Network error. Please try again."); }
     finally { setBusy(false); }
