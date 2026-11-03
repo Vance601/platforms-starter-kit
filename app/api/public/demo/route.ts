@@ -2,7 +2,7 @@
 // fake Las Vegas data and signs the visitor in as its owner.
 import { NextRequest, NextResponse } from "next/server";
 import { createDemoOrg, liveDemoOwner } from "@/lib/demo";
-import { setManagerSession, verifyManagerSession } from "@/lib/manager-session";
+import { setManagerSession, verifyManagerSession, requestHost } from "@/lib/manager-session";
 import { overLimit, clientIp } from "@/lib/rate-limit";
 import { logAudit } from "@/lib/audit";
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const ip = clientIp(req);
     const resume = (userId: string) => {
       const res = NextResponse.json({ success: true, redirect: "/", resumed: true });
-      setManagerSession(res, userId, 60 * 60 * 24);
+      setManagerSession(res, userId, 60 * 60 * 24, requestHost(req));
       return res;
     };
     // 1) Already holding a valid session for a live demo: just continue it.
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     const demo = await createDemoOrg(ip);
     await logAudit({ action: "demo.created", actorType: "manager", actorId: demo.userId, orgId: demo.orgId, entityType: "organization", entityId: demo.orgId, req });
     const res = NextResponse.json({ success: true, redirect: "/" });
-    setManagerSession(res, demo.userId, 60 * 60 * 24);
+    setManagerSession(res, demo.userId, 60 * 60 * 24, requestHost(req));
     return res;
   } catch (err) {
     console.error("[demo] create failed", err);

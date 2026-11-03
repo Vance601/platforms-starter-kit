@@ -6,7 +6,7 @@ import crypto from "crypto";
 import { hashToken } from "@/lib/password-reset";
 import { ensurePendingSignups, appBaseUrl } from "@/lib/public-signup";
 import { provisionOrg, makeOwner } from "@/lib/provision-org";
-import { setManagerSession } from "@/lib/manager-session";
+import { setManagerSession, requestHost } from "@/lib/manager-session";
 import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     await logAudit({ action: "signup.completed", actorType: "manager", actorId: userId, actorName: p.name, orgId: org.orgId, entityType: "organization", entityId: org.orgId, details: { email: p.email }, req });
 
     const res = NextResponse.redirect(`${base}/`);
-    setManagerSession(res, userId);
+    setManagerSession(res, userId, undefined, requestHost(req));
     return res;
   } catch (err) {
     console.error("[signup/verify] failed", err);

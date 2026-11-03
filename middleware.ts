@@ -56,6 +56,13 @@ function hasValidSessionCookie(req: ReqWithCookies, name: string): boolean {
 export default auth((req) => {
   const { pathname } = req.nextUrl;
 
+  // Production *.vercel.app alias -> canonical domain (auth cookies live there).
+  // Pages only; API routes (cron, webhooks) are left alone. Previews unaffected.
+  const host = (req.headers.get("host") || "").toLowerCase();
+  if (process.env.VERCEL_ENV === "production" && host.endsWith(".vercel.app") && !pathname.startsWith("/api/") && (req.method === "GET" || req.method === "HEAD")) {
+    return NextResponse.redirect(new URL(pathname + req.nextUrl.search, "https://www.battery-city.com"), 308);
+  }
+
   if (
     pathname === "/" || // public landing for signed-out visitors (app/page.tsx routes signed-in users)
     pathname === "/driver" ||

@@ -15,6 +15,12 @@ export default function Landing() {
       const r = await fetch("/api/public/demo", { method: "POST" });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d?.success) {
+        // Confirm the browser actually kept the session before navigating.
+        const chk = await fetch("/api/demo/info", { cache: "no-store" }).catch(() => null);
+        if (!chk || !chk.ok) {
+          setErr("The demo started, but your browser didn't keep the sign-in. Please open https://www.battery-city.com and try again.");
+          return;
+        }
         window.location.href = d.redirect || "/";
         return;
       }
