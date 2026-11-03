@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { cookieDomainFor, requestHost } from "@/lib/manager-session";
 import { scryptSync, timingSafeEqual } from "crypto";
+import { ensureUserAdminSchema } from "@/lib/user-admin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -45,9 +46,10 @@ export async function POST(req: NextRequest) {
     }
 
     const emailNorm = email.trim().toLowerCase();
+    await ensureUserAdminSchema();
 
     const { rows } = await sql`
-      SELECT id, name, email, role, status, password_hash
+      SELECT id, name, email, role, status, password_hash, must_change_password
       FROM users
       WHERE lower(email) = ${emailNorm}
       LIMIT 1;
@@ -83,6 +85,7 @@ export async function POST(req: NextRequest) {
         email: user.email,
         role: user.role,
       },
+      mustChangePassword: user.must_change_password === true,
     });
 
     res.cookies.set("manager_session", token, {

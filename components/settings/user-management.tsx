@@ -38,7 +38,7 @@ export function UserManagement() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Button asChild variant="outline">
-          <Link href="/admin/users">Reset passwords</Link>
+          <Link href="/admin/users">Manage users &amp; passwords</Link>
         </Button>
       </div>
       {loading ? (

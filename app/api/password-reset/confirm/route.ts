@@ -3,6 +3,7 @@ import { logAudit } from "@/lib/audit";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { ensureResetTable, hashPassword, hashToken } from "@/lib/password-reset";
+import { ensureUserAdminSchema } from "@/lib/user-admin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest) {
     }
 
     await ensureResetTable();
+    await ensureUserAdminSchema();
 
     // Claim the token atomically: only one request can ever use it.
     const { rows } = await sql`
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { rowCount } = await sql`
-      UPDATE users SET password_hash = ${hashPassword(newPassword)}
+      UPDATE users SET password_hash = ${hashPassword(newPassword)}, must_change_password = false
       WHERE id = ${rows[0].user_id} AND status = 'active';
     `;
     if (!rowCount) {
