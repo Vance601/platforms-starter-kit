@@ -47,7 +47,7 @@ export default function Landing() {
       <div style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}>
       {/* Ghost hero: black AMG GT 53, hood up, glowing red battery. Faded behind
           a navy gradient so the headline and buttons stay readable. */}
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none" }}>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none", WebkitMaskImage: "linear-gradient(180deg,#000 65%,transparent 100%)", maskImage: "linear-gradient(180deg,#000 65%,transparent 100%)" }}>
         <Image
           src="/hero-amg.webp"
           alt=""
@@ -58,7 +58,6 @@ export default function Landing() {
           className="object-cover object-bottom opacity-25 md:object-right md:opacity-40"
         />
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,#0f172a 0%,rgba(15,23,42,0.85) 35%,rgba(15,23,42,0.35) 70%,rgba(15,23,42,0.15) 100%)" }} />
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(15,23,42,0) 70%,#0f172a 100%)" }} />
       </div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ fontWeight: 800, fontSize: 20 }}><BrandLogo size={28} /></div>
