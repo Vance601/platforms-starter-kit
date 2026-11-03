@@ -1,4 +1,5 @@
 "use client"
+import { useOrgName } from "@/lib/use-org-name"
 
 import React, { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -199,6 +200,7 @@ function DashboardSkeleton() {
 /* ------------------------------------------------------------------ */
 
 export default function Dashboard() {
+  const orgName = useOrgName()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [summaryError, setSummaryError] = useState("")
@@ -316,7 +318,7 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Dugger&apos;s Battery Program</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{orgName}</h1>
         <div className="flex items-center gap-2">
           <Link href="/batteries/new">
             <Button className="text-base h-11">

@@ -1,4 +1,5 @@
 "use client"
+import { useOrgName } from "@/lib/use-org-name"
 
 import type React from "react"
 
@@ -30,6 +31,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
+  const orgName = useOrgName()
   const pathname = usePathname()
 
   // End the session on a shared terminal. Clears the manager cookie first,
@@ -50,7 +52,7 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
     >
       <div className="space-y-2 py-2">
         <div className="px-3 py-1">
-          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">Duggers Tracker</h2>
+          <h2 className="mb-2 px-4 text-lg font-semibold tracking-tight">{orgName}</h2>
           <div className="space-y-0.5">
             <Button variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
               <Link href="/">

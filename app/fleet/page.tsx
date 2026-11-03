@@ -1,4 +1,5 @@
 "use client"
+import { useOrgName } from "@/lib/use-org-name"
 
 import { useOrgCompanies } from "@/lib/use-org-companies"
 import { useState, useEffect } from "react"
@@ -73,6 +74,7 @@ function kindColor(kind: FeedItem["kind"]): string {
 }
 
 export default function FleetPage() {
+  const orgName = useOrgName()
   const [trucks, setTrucks] = useState<Truck[]>([])
   const [locations, setLocations] = useState<LocationOverview[]>([])
   const [feed, setFeed] = useState<FeedItem[]>([])
@@ -171,7 +173,7 @@ export default function FleetPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Dugger&apos;s Battery Program</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{orgName}</h1>
         <Button onClick={openDialog}>
           <PlusCircle className="mr-2 h-4 w-4" />
           Add Truck
