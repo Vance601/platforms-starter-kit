@@ -47,23 +47,14 @@ export default function Landing() {
       <div style={{ position: "relative", isolation: "isolate", overflow: "hidden" }}>
       {/* Ghost hero: black AMG GT 53, hood up, glowing red battery. Faded behind
           a navy gradient so the headline and buttons stay readable. */}
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: -1, pointerEvents: "none", WebkitMaskImage: "linear-gradient(180deg,#000 65%,transparent 100%)", maskImage: "linear-gradient(180deg,#000 65%,transparent 100%)" }}>
-        <Image
-          src="/hero-amg.webp"
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          quality={70}
-          className="object-cover object-bottom opacity-25 md:object-right md:opacity-40"
-        />
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,#0f172a 0%,rgba(15,23,42,0.85) 35%,rgba(15,23,42,0.35) 70%,rgba(15,23,42,0.15) 100%)" }} />
+      <div aria-hidden="true" className="absolute right-0 bottom-0 w-full opacity-30 md:w-[52%] md:opacity-60" style={{ zIndex: -1, pointerEvents: "none", aspectRatio: "16 / 9", WebkitMaskImage: "radial-gradient(ellipse 70% 75% at 62% 50%,#000 55%,transparent 100%)", maskImage: "radial-gradient(ellipse 70% 75% at 62% 50%,#000 55%,transparent 100%)" }}>
+        <Image src="/hero-amg.webp" alt="" fill priority sizes="(min-width: 768px) 52vw, 100vw" quality={70} className="object-contain object-right-bottom" />
       </div>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ fontWeight: 800, fontSize: 20 }}><BrandLogo size={28} /></div>
         <a href="/login" style={{ color: "#cbd5e1", textDecoration: "none", fontWeight: 600 }}>Log in</a>
       </header>
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "60px 28px 72px" }}>
+      <main className="pb-[220px] md:pb-[150px]" style={{ maxWidth: 1100, margin: "0 auto", paddingTop: 60, paddingLeft: 28, paddingRight: 28 }}>
         <h1 style={{ fontSize: 46, lineHeight: 1.1, fontWeight: 800, maxWidth: 760, margin: 0 }}>
           {"Battery inventory tracking & warranties plus sales reports"}
         </h1>
