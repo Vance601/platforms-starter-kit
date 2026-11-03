@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    let orgRow: { id: string; name: string; slug: string } | undefined;
+    type OrgRow = { id: string; name: string; slug: string };
+    let orgRow: OrgRow | undefined;
 
     if (orgSlug) {
       const { rows } = await sql`
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
         WHERE lower(slug) = ${orgSlug}
         LIMIT 1;
       `;
-      orgRow = rows[0] as typeof orgRow;
+      orgRow = rows[0] as OrgRow | undefined;
     }
     if (!orgRow) {
       // Company link (or an org link that is really a company slug) -
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
         WHERE lower(c.slug) = ${companySlug || orgSlug}
         LIMIT 1;
       `;
-      orgRow = rows[0] as typeof orgRow;
+      orgRow = rows[0] as OrgRow | undefined;
     }
 
     if (!orgRow) {

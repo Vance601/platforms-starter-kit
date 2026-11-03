@@ -9,6 +9,15 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Signed-in app pages and APIs must not be indexed. Public pages are exempt.
+  async headers() {
+    return [
+      {
+        source: "/:path((?!signup$|login$|warranty-lookup$|robots\\.txt$|sitemap\\.xml$|_next/).+)",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+    ]
+  },
 }
 
 export default nextConfig

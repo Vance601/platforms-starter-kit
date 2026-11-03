@@ -7,10 +7,26 @@ import AppShell from "@/components/app-shell"
 
 const inter = Inter({ subsets: ["latin"] })
 
+const SITE_URL = "https://www.battery-city.com"
+const TITLE = "Battery City | Battery inventory tracking, warranties & sales reports"
+const DESCRIPTION = "Battery City tracks battery inventory across warehouses and trucks, manages warranties and core returns, and turns roadside sales into clear reports."
+
 export const metadata: Metadata = {
-  title: "Battery City",
-  description: "Battery inventory, fleet and warranty management",
-    generator: 'v0.dev'
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: "Battery City",
+  alternates: { canonical: SITE_URL },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Battery City",
+    title: TITLE,
+    description: DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: { card: "summary", title: TITLE, description: DESCRIPTION },
+  robots: { index: true, follow: true },
 }
 
 export default function RootLayout({
