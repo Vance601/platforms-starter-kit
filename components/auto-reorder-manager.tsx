@@ -247,7 +247,7 @@ export const useAutoReorderStore = create<AutoReorderState>()(
           const reorderItem = {
             type: batteryType,
             model: `${batteryType}-Standard`, // Default model name
-            quantity: quantity,
+            quantity: Math.min(10000, Math.max(1, Math.round(Number(quantity) || 1))),
             location: alert.location,
             threshold: alert.threshold || 0,
             current: alert.current || 0,
