@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser, type CurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
+import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -217,6 +218,43 @@ export async function PATCH(req: NextRequest) {
         success: true,
         message: nowActive ? "Driver reactivated" : "Driver deactivated",
         active: nowActive,
+      });
+    }
+
+    if (action === "setPin") {
+      // Admin sets a specific 4-digit PIN. Driver login is by driver id + PIN,
+      // so PINs do not need to be unique. The PIN is never logged or returned.
+      const pin = typeof body.pin === "string" ? body.pin : "";
+      if (!/^\d{4}$/.test(pin)) {
+        return NextResponse.json({ success: false, error: "PIN must be exactly 4 digits." }, { status: 400 });
+      }
+      const requireChange = body.requireChange === true;
+      await sql`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS must_change_pin BOOLEAN NOT NULL DEFAULT FALSE;`;
+      const { rows } = await sql`
+        UPDATE drivers SET pin_hash = ${hashPin(pin)}, must_change_pin = ${requireChange}
+        WHERE id = ${driverId}
+        RETURNING id, name, company_id;
+      `;
+      if (rows.length === 0) return NOT_FOUND;
+      try {
+        await sql`DELETE FROM driver_login_attempts WHERE driver_id = ${String(driverId)};`;
+      } catch {}
+      await logAudit({
+        action: "driver.pin_set_by_admin",
+        actorType: "user",
+        actorId: gate.user.userId,
+        orgId,
+        companyId: rows[0].company_id,
+        entityType: "driver",
+        entityId: rows[0].id,
+        details: { driverName: rows[0].name, requireChange },
+        req,
+      });
+      return NextResponse.json({
+        success: true,
+        message: requireChange
+          ? `PIN set for ${rows[0].name} - they must change it at next login`
+          : `PIN set for ${rows[0].name}`,
       });
     }
 

@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
       WHERE id = ${driverId} AND active = TRUE;
     `;
 
+    try { await sql`UPDATE drivers SET must_change_pin = FALSE WHERE id = ${driverId};`; } catch {}
     if (rowCount === 0) {
       return NextResponse.json(
         { success: false, error: "Driver not found or inactive" },
