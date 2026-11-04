@@ -31,6 +31,24 @@ export default function AdminDrivers() {
   const [editName, setEditName] = useState("");
   const [editCompany, setEditCompany] = useState("");
 
+  // Set PIN (admin picks a specific 4-digit PIN; stored PINs are never shown)
+  const [pinId, setPinId] = useState<string | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  const [pinRequire, setPinRequire] = useState(false);
+  const [pinErr, setPinErr] = useState("");
+
+  async function savePin(id: string) {
+    if (!/^\d{4}$/.test(pinValue)) {
+      setPinErr("PIN must be exactly 4 digits.");
+      return;
+    }
+    setPinErr("");
+    await patchDriver({ driverId: id, action: "setPin", pin: pinValue, requireChange: pinRequire });
+    setPinId(null);
+    setPinValue("");
+    setPinRequire(false);
+  }
+
   async function loadDrivers() {
     setError("");
     try {
@@ -321,6 +339,13 @@ export default function AdminDrivers() {
                     Edit
                   </button>
                   <button
+                    onClick={() => { setPinId(pinId === d.id ? null : d.id); setPinValue(""); setPinRequire(false); setPinErr(""); }}
+                    disabled={busy}
+                    style={{ ...btn, background: "#1d4ed8", color: "#f8fafc" }}
+                  >
+                    Set PIN
+                  </button>
+                  <button
                     onClick={() => patchDriver({ driverId: d.id, action: "resetPin" })}
                     disabled={busy}
                     style={{ ...btn, background: "#334155", color: "#f8fafc" }}
@@ -335,6 +360,38 @@ export default function AdminDrivers() {
                     {d.active ? "Deactivate" : "Reactivate"}
                   </button>
                 </div>
+              )}
+              {pinId === d.id && editId !== d.id && (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); savePin(d.id); }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid #334155" }}
+                >
+                  <label style={{ fontSize: 13, color: "#cbd5e1" }}>
+                    New 4-digit PIN for {d.name}
+                    <input
+                      aria-label="New PIN"
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="new-password"
+                      pattern="\d{4}"
+                      maxLength={4}
+                      value={pinValue}
+                      onChange={(e) => { setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinErr(""); }}
+                      style={{ marginLeft: 8, width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid #475569", background: "#0f172a", color: "#f8fafc", letterSpacing: 6, fontSize: 18 }}
+                    />
+                  </label>
+                  <label style={{ fontSize: 13, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 6 }}>
+                    <input type="checkbox" checked={pinRequire} onChange={(e) => setPinRequire(e.target.checked)} />
+                    Require change at next login
+                  </label>
+                  <button type="submit" disabled={busy || pinValue.length !== 4} style={{ ...btn, background: "#22c55e", color: "#0f172a", opacity: pinValue.length === 4 ? 1 : 0.5 }}>
+                    Save PIN
+                  </button>
+                  <button type="button" onClick={() => setPinId(null)} style={{ ...btn, background: "#334155", color: "#f8fafc" }}>
+                    Cancel
+                  </button>
+                  {pinErr && <span style={{ color: "#fca5a5", fontSize: 13 }}>{pinErr}</span>}
+                </form>
               )}
             </div>
           ))}

@@ -78,6 +78,7 @@ export async function POST(req: NextRequest) {
 
     await sql`UPDATE drivers SET pin_hash = ${hashPin(newPin)} WHERE id = ${d.id};`;
     await sql`DELETE FROM driver_login_attempts WHERE driver_id = ${String(d.id)};`;
+    try { await sql`UPDATE drivers SET must_change_pin = FALSE WHERE id = ${d.id};`; } catch {}
     await logAudit({ action: "driver.pin_change", actorType: "driver", actorId: d.id, actorName: d.name, companyId: d.company_id, entityType: "driver", entityId: d.id, req });
     return NextResponse.json({ success: true });
   } catch (err: unknown) {

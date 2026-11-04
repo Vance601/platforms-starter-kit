@@ -133,7 +133,14 @@ export async function POST(req: NextRequest) {
     const token = signSession(driver.id, expiry);
 
     // True when the PIN is still the seeded placeholder — force a reset.
-    const mustChangePin = verifyPin("0000", driver.pin_hash);
+    let flagged = false;
+    try {
+      const { rows: f } = await sql`SELECT must_change_pin FROM drivers WHERE id = ${driver.id} LIMIT 1;`;
+      flagged = f[0]?.must_change_pin === true;
+    } catch {
+      // Column not added yet - no admin has set a PIN with "require change".
+    }
+    const mustChangePin = flagged || verifyPin("0000", driver.pin_hash);
 
     const res = NextResponse.json({
       success: true,
