@@ -1,5 +1,7 @@
 "use client"
 
+import { parseOrderQty } from "@/lib/order-qty"
+
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -185,8 +187,9 @@ export function CombinedOrdersView({
     setEditDialogOpen(true)
   }
 
-  const handleUpdateQuantity = (index: number, newQuantity: number) => {
-    if (newQuantity < 1) newQuantity = 1
+  const handleUpdateQuantity = (index: number, newQuantity: number | string) => {
+    // Keep what was typed; it is validated on save (no silent rounding or clamping).
+    if (typeof newQuantity === "number" && newQuantity < 1) newQuantity = 1
 
     const updatedItems = [...editedItems]
     updatedItems[index] = { ...updatedItems[index], quantity: newQuantity }
@@ -194,8 +197,15 @@ export function CombinedOrdersView({
   }
 
   const handleSaveChanges = () => {
+    const checked = editedItems.map((it: any) => ({ it, r: parseOrderQty(it.quantity) }))
+    const bad = checked.find((c: any) => !c.r.ok)
+    if (bad) {
+      toast({ title: "Check the quantities", description: `${bad.it.type}: ${(bad.r as any).error}`, variant: "destructive" })
+      return
+    }
+    const cleanItems: any[] = checked.map((c: any) => ({ ...c.it, quantity: (c.r as any).qty }))
     // Update items in the reorder
-    editedItems.forEach((item, index) => {
+    cleanItems.forEach((item, index) => {
       const originalItem = editingOrder.items[index]
 
       // Check if type or quantity has changed
@@ -832,22 +842,26 @@ export function CombinedOrdersView({
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleUpdateQuantity(index, item.quantity - 1)}
+                              onClick={() => handleUpdateQuantity(index, Math.max(1, (parseInt(String(item.quantity), 10) || 1) - 1))}
                             >
                               <Minus className="h-4 w-4" />
                             </Button>
                             <Input
                               type="number"
                               value={item.quantity}
-                              onChange={(e) => handleUpdateQuantity(index, Number.parseInt(e.target.value) || 1)}
-                              className="w-16 text-center"
+                              onChange={(e) => handleUpdateQuantity(index, e.target.value)}
+                              aria-label={`Quantity for ${item.type}`}
+                              aria-invalid={!parseOrderQty(item.quantity).ok}
+                              step="1"
+                              max="10000"
+                              className={`w-24 text-center ${parseOrderQty(item.quantity).ok ? "" : "border-red-500"}`}
                               min="1"
                             />
                             <Button
                               variant="outline"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleUpdateQuantity(index, item.quantity + 1)}
+                              onClick={() => handleUpdateQuantity(index, Math.min(10000, (parseInt(String(item.quantity), 10) || 0) + 1))}
                             >
                               <Plus className="h-4 w-4" />
                             </Button>
@@ -1488,22 +1502,26 @@ export function CombinedOrdersView({
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => handleUpdateQuantity(index, item.quantity - 1)}
+                            onClick={() => handleUpdateQuantity(index, Math.max(1, (parseInt(String(item.quantity), 10) || 1) - 1))}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
                           <Input
                             type="number"
                             value={item.quantity}
-                            onChange={(e) => handleUpdateQuantity(index, Number.parseInt(e.target.value) || 1)}
-                            className="w-16 text-center"
+                            onChange={(e) => handleUpdateQuantity(index, e.target.value)}
+                              aria-label={`Quantity for ${item.type}`}
+                              aria-invalid={!parseOrderQty(item.quantity).ok}
+                              step="1"
+                              max="10000"
+                            className={`w-24 text-center ${parseOrderQty(item.quantity).ok ? "" : "border-red-500"}`}
                             min="1"
                           />
                           <Button
                             variant="outline"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => handleUpdateQuantity(index, item.quantity + 1)}
+                            onClick={() => handleUpdateQuantity(index, Math.min(10000, (parseInt(String(item.quantity), 10) || 0) + 1))}
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
