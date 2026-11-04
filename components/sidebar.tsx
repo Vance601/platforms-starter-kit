@@ -4,6 +4,7 @@ import { useOrgName } from "@/lib/use-org-name"
 import type React from "react"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import {
   BarChart3,
@@ -33,6 +34,13 @@ import BrandLogo from "@/components/brand-logo"
 
 export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
   const orgName = useOrgName()
+  const [platformOwner, setPlatformOwner] = useState(false)
+  useEffect(() => {
+    fetch("/api/admin/demo-leads?check=1", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setPlatformOwner(d?.platform === true))
+      .catch(() => {})
+  }, [])
   const pathname = usePathname()
 
   // End the session on a shared terminal. Clears the manager cookie first,
@@ -149,6 +157,14 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
               Users &amp; Passwords
             </Link>
           </Button>
+          {platformOwner && (
+            <Button variant={pathname === "/admin/demo-leads" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
+              <Link href="/admin/demo-leads">
+                <Users className="mr-2 h-4 w-4" />
+                Demo Leads
+              </Link>
+            </Button>
+          )}
           <Button variant={pathname === "/locations" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/locations">
               <MapPin className="mr-2 h-4 w-4" />

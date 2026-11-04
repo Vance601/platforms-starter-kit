@@ -1,38 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import DemoLeadForm from "@/components/demo-lead-form";
 import Image from "next/image";
 import BrandLogo from "@/components/brand-logo";
 
 // Public landing page for signed-out visitors at "/". Rendered as a full-screen
 // layer so the staff sidebar from the app shell is not shown.
 export default function Landing() {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
-  async function tryDemo() {
-    setBusy(true);
-    setErr(null);
+  // Remember where the visitor came from so the demo lead keeps it even if
+  // they click through to /login first.
+  useEffect(() => {
     try {
-      const r = await fetch("/api/public/demo", { method: "POST" });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok && d?.success) {
-        // Confirm the browser actually kept the session before navigating.
-        const chk = await fetch("/api/demo/info", { cache: "no-store" }).catch(() => null);
-        if (!chk || !chk.ok) {
-          setErr("The demo started, but your browser didn't keep the sign-in. Please open https://www.battery-city.com and try again.");
-          return;
-        }
-        window.location.href = d.redirect || "/";
-        return;
+      const q = new URLSearchParams(window.location.search);
+      for (const k of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"]) {
+        const v = q.get(k);
+        if (v) sessionStorage.setItem(k, v);
       }
-      setErr(d?.error || "The demo is not available right now. Please try again shortly.");
-    } catch {
-      setErr("Network error. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
+      if (document.referrer && !document.referrer.includes(window.location.host) && !sessionStorage.getItem("bc_ref")) {
+        sessionStorage.setItem("bc_ref", document.referrer);
+      }
+    } catch {}
+  }, []);
 
   const btn: React.CSSProperties = { display: "inline-block", padding: "14px 26px", borderRadius: 10, fontSize: 16, fontWeight: 600, textDecoration: "none", border: "none", cursor: "pointer" };
   const features: [string, string][] = [
@@ -63,12 +54,12 @@ export default function Landing() {
         </p>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 32 }}>
           <a href="/signup" style={{ ...btn, background: "#22c55e", color: "#0f172a" }}>Sign up</a>
-          <button onClick={tryDemo} disabled={busy} style={{ ...btn, background: "#3b82f6", color: "#fff", opacity: busy ? 0.7 : 1 }}>
-            {busy ? "Building your demo..." : "Try the demo"}
+          <button onClick={() => setOpen(true)} style={{ ...btn, background: "#3b82f6", color: "#fff" }}>
+            Try the demo
           </button>
           <a href="/login" style={{ ...btn, background: "transparent", color: "#f8fafc", border: "1px solid #475569" }}>Log in</a>
         </div>
-        {err && <p style={{ color: "#fca5a5", marginTop: 14 }}>{err}</p>}
+        {open && <DemoLeadForm onClose={() => setOpen(false)} />}
       </main>
       </div>
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "0 28px 60px" }}>
