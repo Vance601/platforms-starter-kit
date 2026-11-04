@@ -12,7 +12,8 @@ const REF_COLS: Record<string, string> = {
   org_id: "organizations", company_id: "companies", location_id: "locations", truck_id: "trucks",
   driver_id: "drivers", user_id: "users", battery_id: "batteries", customer_id: "customers", vehicle_id: "vehicles",
 };
-const SKIP_TABLES = new Set(["organizations", "public_rate_limits"]);
+// demo_leads is the permanent lead log: never cleaned up.
+const SKIP_TABLES = new Set(["organizations", "public_rate_limits", "demo_leads"]);
 
 type Cols = Map<string, Set<string>>;
 
