@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
+import { normalizeOrgSlug } from "@/lib/org-slug";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -18,8 +19,8 @@ export const maxDuration = 30;
 // Neither -> no drivers. Fail closed.
 export async function GET(req: NextRequest) {
   try {
-    const orgSlug = (req.nextUrl.searchParams.get("org") || "").trim().toLowerCase();
-    const companySlug = (req.nextUrl.searchParams.get("company") || "").trim().toLowerCase();
+    const orgSlug = normalizeOrgSlug(req.nextUrl.searchParams.get("org") || req.nextUrl.searchParams.get("o") || "");
+    const companySlug = normalizeOrgSlug(req.nextUrl.searchParams.get("company") || req.nextUrl.searchParams.get("c") || "");
 
     if (!orgSlug && !companySlug) {
       return NextResponse.json({

@@ -1,3 +1,4 @@
+import { normalizeOrgSlug } from "@/lib/org-slug";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,6 @@ export default async function OrgEntryPage({
   params: Promise<{ company: string }>;
 }) {
   const { company } = await params;
-  const slug = (company || "").trim().toLowerCase();
+  const slug = normalizeOrgSlug(company);
   redirect(`/d/${encodeURIComponent(slug)}/driver`);
 }

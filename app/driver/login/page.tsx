@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeOrgSlug } from "@/lib/org-slug";
+
 import { useEffect, useState } from "react";
 
 type Driver = { id: string; name: string; company_name?: string };
@@ -21,18 +23,33 @@ export default function DriverLogin() {
   // Load the driver list for the name picker, scoped to one company.
   // The slug comes from ?c= (set by /d/<company>) and is remembered on the
   // device so a bookmarked /driver/login keeps working for that customer.
-  function loadDrivers(slug: string) {
+  function clearCompany() {
+    setOrgSlug("");
+    setOrgName("");
+    setDrivers([]);
+    try {
+      window.localStorage.removeItem("driver_org");
+    } catch {
+      // ignore
+    }
+  }
+
+  function loadDrivers(rawSlug: string) {
+    const slug = normalizeOrgSlug(rawSlug);
     if (!slug) {
+      clearCompany();
       setStep("pick");
       return;
     }
+    setOrgSlug(slug);
     fetch(`/api/auth-driver/list?org=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
-          setDrivers(data.drivers);
+          setDrivers(data.drivers || []);
           setOrgName(data.org?.name || "");
           setOrgSlug(data.org?.slug || slug);
+          setError("");
           try {
             window.localStorage.setItem("driver_org", data.org?.slug || slug);
           } catch {
@@ -40,28 +57,36 @@ export default function DriverLogin() {
           }
           setStep("pick");
         } else {
-          setError(data.error || "Could not load drivers");
+          // Dead-end fix: bad/stale slug (often a trailing "." from a texted
+          // link) used to leave "Tap your name" with an empty list. Drop the
+          // slug and show the company-code picker so the driver can continue.
+          clearCompany();
+          setError(
+            data.error === "Unknown company."
+              ? "We couldn't find that company. Check the link from your dispatcher, or enter your company code below."
+              : data.error || "Could not load drivers",
+          );
           setStep("pick");
         }
       })
       .catch(() => {
-        setError("Could not load drivers");
+        clearCompany();
+        setError("Could not load drivers. Check your connection and try again.");
         setStep("pick");
       });
   }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let slug = (params.get("o") || params.get("org") || params.get("c") || "").trim();
+    let slug = normalizeOrgSlug(params.get("o") || params.get("org") || params.get("c") || "");
     if (!slug) {
       try {
-        slug = window.localStorage.getItem("driver_org") || "";
+        slug = normalizeOrgSlug(window.localStorage.getItem("driver_org") || "");
       } catch {
         slug = "";
       }
     }
     if (slug) {
-      setOrgSlug(slug);
       loadDrivers(slug);
     } else {
       setStep("pick");
@@ -206,6 +231,30 @@ export default function DriverLogin() {
             <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
           )}
 
+          {orgSlug ? (
+            <button
+              type="button"
+              onClick={() => {
+                clearCompany();
+                setError("");
+                setCodeInput("");
+              }}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#93c5fd",
+                fontSize: 13,
+                marginBottom: 12,
+                padding: 0,
+                cursor: "pointer",
+                textDecoration: "underline",
+                alignSelf: "flex-start",
+              }}
+            >
+              Wrong company? Enter a different code
+            </button>
+          ) : null}
+
           {/* No company in the URL: ask for the code instead of listing
               every driver on the platform. */}
           {!orgSlug ? (
@@ -227,11 +276,10 @@ export default function DriverLogin() {
               />
               <button
                 onClick={() => {
-                  const slug = codeInput.trim().toLowerCase();
+                  const slug = normalizeOrgSlug(codeInput);
                   if (!slug) return;
                   setError("");
                   setStep("loading");
-                  setOrgSlug(slug);
                   loadDrivers(slug);
                 }}
                 style={{
