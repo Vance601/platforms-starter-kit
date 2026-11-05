@@ -22,8 +22,7 @@ type Pickup = {
 type Line = { model_code: string; raw_description: string; units: number; other: boolean };
 
 const MODEL_CODES = [
-  "124R", "140R", "151R", "24F", "27", "34", "35", "47", "47AGM", "48", "48AGM",
-  "49", "49AGM", "51", "51R", "65", "78", "86", "94RAGM", "96R", "AUX14", "PRIUS", "TESLA",
+  "124R", "140R", "151R", "24F", "27", "34", "35", "47", "47AGM", "48", "48AGM", "49", "49AGM", "51", "51R", "65", "78", "86", "94R", "94RAGM", "96R", "AUX14", "PRIUS", "TESLA", "SX48", "SX86", "SX94R", "SX65", "31xxD", "31xxE",
 ];
 
 async function fileToScaledBase64(
