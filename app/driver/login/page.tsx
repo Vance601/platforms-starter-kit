@@ -36,7 +36,7 @@ export default function DriverLogin() {
 
   // source: "url" | "storage" | "typed" — only url/typed failures show a red
   // error. A stale localStorage value (e.g. a deleted demo org) clears quietly
-  // so a bare /driver/login on battery-city.com just shows the code box.
+  // so a bare /driver/login on battery-city.com just shows the name box.
   function loadDrivers(rawSlug: string, source: "url" | "storage" | "typed" = "typed") {
     const slug = normalizeOrgSlug(rawSlug);
     if (!slug) {
@@ -66,13 +66,13 @@ export default function DriverLogin() {
         } else {
           clearCompany();
           if (source === "storage") {
-            // Stale remembered code - don't scare the driver with a red error
+            // Stale remembered company - don't scare the driver with a red error
             // on a plain /driver/login open.
             setError("");
           } else {
             setError(
               data.error === "Unknown company." || data.error === "No company specified."
-                ? "We couldn't find that company. Check the link from your dispatcher, or enter your company code below."
+                ? "We couldn't find that company. Check the link from your dispatcher, or enter your company name below."
                 : data.error || "Could not load drivers",
             );
           }
@@ -242,7 +242,7 @@ export default function DriverLogin() {
             {orgName ? `${orgName} Drivers` : "Driver Login"}
           </h1>
           <p style={{ color: "#94a3b8", marginBottom: 20, fontSize: 14 }}>
-            {orgSlug ? "Tap your name" : "Enter your company code to continue"}
+            {orgSlug ? "Tap your name" : "Enter your company name to continue"}
           </p>
           {error && (
             <div style={{ color: "#f87171", marginBottom: 12 }}>{error}</div>
@@ -268,18 +268,18 @@ export default function DriverLogin() {
                 alignSelf: "flex-start",
               }}
             >
-              Wrong company? Enter a different code
+              Wrong company? Enter a different name
             </button>
           ) : null}
 
-          {/* No company in the URL: ask for the code instead of listing
+          {/* No company in the URL: ask for the company name instead of listing
               every driver on the platform. */}
           {!orgSlug ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <input
                 value={codeInput}
                 onChange={(e) => setCodeInput(e.target.value)}
-                placeholder="Company code"
+                placeholder="Company name"
                 autoCapitalize="none"
                 autoCorrect="off"
                 style={{
@@ -313,7 +313,7 @@ export default function DriverLogin() {
                 Continue
               </button>
               <p style={{ color: "#64748b", fontSize: 12 }}>
-                Your dispatcher can give you the direct link so you only do this once.
+                Enter your company name (for example Dugger's), or ask your dispatcher for the direct link.
               </p>
             </div>
           ) : null}
