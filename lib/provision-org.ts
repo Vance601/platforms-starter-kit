@@ -3,6 +3,7 @@
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
 import { ensureOrgSettingsTable, type OrgSettings } from "@/lib/org-settings";
+import { applyBatteryCatalogUpdates } from "@/lib/battery-catalog";
 
 export function slugify(input: string): string {
   return (
@@ -100,6 +101,8 @@ export async function provisionOrg(input: ProvisionInput): Promise<Provisioned> 
   `;
 
   await seedBatteryTypes();
+  // Global model catalog (idempotent); keeps Duggers + new orgs in sync.
+  await applyBatteryCatalogUpdates().catch((e) => console.error("[provision] battery catalog", e));
 
   if (input.settings) {
     await ensureOrgSettingsTable();

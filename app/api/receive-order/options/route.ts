@@ -31,6 +31,7 @@ export async function GET() {
 
     const { rows: models } = await sql`
       SELECT battery_models.code, battery_models.display_name,
+             battery_models.description,
              battery_types.code AS classification_code
       FROM battery_models
       JOIN battery_types ON battery_types.id = battery_models.battery_type_id
@@ -50,6 +51,7 @@ export async function GET() {
       models: models.map(m => ({
         code: m.code,
         displayName: m.display_name,
+        description: m.description,
         classification: m.classification_code,
       })),
     });
