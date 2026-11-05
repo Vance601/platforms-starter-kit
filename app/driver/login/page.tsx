@@ -34,15 +34,22 @@ export default function DriverLogin() {
     }
   }
 
-  function loadDrivers(rawSlug: string) {
+  // source: "url" | "storage" | "typed" — only url/typed failures show a red
+  // error. A stale localStorage value (e.g. a deleted demo org) clears quietly
+  // so a bare /driver/login on battery-city.com just shows the code box.
+  function loadDrivers(rawSlug: string, source: "url" | "storage" | "typed" = "typed") {
     const slug = normalizeOrgSlug(rawSlug);
     if (!slug) {
       clearCompany();
+      if (source !== "storage") {
+        // Empty typed submit - keep any existing error; empty URL is silent.
+      }
       setStep("pick");
       return;
     }
     setOrgSlug(slug);
-    fetch(`/api/auth-driver/list?org=${encodeURIComponent(slug)}`)
+    // Send the raw value too so the API can try UUID / display-name matches.
+    fetch(`/api/auth-driver/list?org=${encodeURIComponent(String(rawSlug).trim())}&o=${encodeURIComponent(slug)}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
@@ -57,37 +64,47 @@ export default function DriverLogin() {
           }
           setStep("pick");
         } else {
-          // Dead-end fix: bad/stale slug (often a trailing "." from a texted
-          // link) used to leave "Tap your name" with an empty list. Drop the
-          // slug and show the company-code picker so the driver can continue.
           clearCompany();
-          setError(
-            data.error === "Unknown company."
-              ? "We couldn't find that company. Check the link from your dispatcher, or enter your company code below."
-              : data.error || "Could not load drivers",
-          );
+          if (source === "storage") {
+            // Stale remembered code - don't scare the driver with a red error
+            // on a plain /driver/login open.
+            setError("");
+          } else {
+            setError(
+              data.error === "Unknown company." || data.error === "No company specified."
+                ? "We couldn't find that company. Check the link from your dispatcher, or enter your company code below."
+                : data.error || "Could not load drivers",
+            );
+          }
           setStep("pick");
         }
       })
       .catch(() => {
         clearCompany();
-        setError("Could not load drivers. Check your connection and try again.");
+        if (source !== "storage") {
+          setError("Could not load drivers. Check your connection and try again.");
+        }
         setStep("pick");
       });
   }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    let slug = normalizeOrgSlug(params.get("o") || params.get("org") || params.get("c") || "");
-    if (!slug) {
-      try {
-        slug = normalizeOrgSlug(window.localStorage.getItem("driver_org") || "");
-      } catch {
-        slug = "";
-      }
+    const rawUrl = (params.get("o") || params.get("org") || params.get("c") || "").trim();
+    const urlSlug = normalizeOrgSlug(rawUrl);
+    if (urlSlug || rawUrl) {
+      // Explicit link (even a bad one) - try it and show an error if it fails.
+      loadDrivers(rawUrl || urlSlug, "url");
+      return;
     }
-    if (slug) {
-      loadDrivers(slug);
+    let stored = "";
+    try {
+      stored = window.localStorage.getItem("driver_org") || "";
+    } catch {
+      stored = "";
+    }
+    if (stored) {
+      loadDrivers(stored, "storage");
     } else {
       setStep("pick");
     }
@@ -276,11 +293,11 @@ export default function DriverLogin() {
               />
               <button
                 onClick={() => {
-                  const slug = normalizeOrgSlug(codeInput);
-                  if (!slug) return;
+                  const raw = codeInput.trim();
+                  if (!raw) return;
                   setError("");
                   setStep("loading");
-                  loadDrivers(slug);
+                  loadDrivers(raw, "typed");
                 }}
                 style={{
                   padding: "14px 16px",
