@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { normalizeOrgSlug } from "@/lib/org-slug";
+import { nameKey, normalizeOrgSlug } from "@/lib/org-slug";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -14,15 +14,25 @@ export const maxDuration = 30;
 // drivers whether they work out of Phoenix, Albuquerque or Tucson, and they all
 // use one login link. A different customer is a different org and shares nothing.
 //
-// Usage: /api/auth-driver/list?org=<org slug>
-// Legacy: ?company=<company slug> still works and resolves to that company's org.
-// Neither -> no drivers. Fail closed.
+// Accepts ?org= / ?o= / ?company= / ?c= as a slug, a UUID id, or a company/org
+// display name. Fail closed when nothing matches.
 export async function GET(req: NextRequest) {
   try {
-    const orgSlug = normalizeOrgSlug(req.nextUrl.searchParams.get("org") || req.nextUrl.searchParams.get("o") || "");
-    const companySlug = normalizeOrgSlug(req.nextUrl.searchParams.get("company") || req.nextUrl.searchParams.get("c") || "");
+    const rawOrg =
+      req.nextUrl.searchParams.get("org") ||
+      req.nextUrl.searchParams.get("o") ||
+      "";
+    const rawCompany =
+      req.nextUrl.searchParams.get("company") ||
+      req.nextUrl.searchParams.get("c") ||
+      "";
+    const raw = String(rawOrg || rawCompany || "").trim();
+    const orgSlug = normalizeOrgSlug(rawOrg);
+    const companySlug = normalizeOrgSlug(rawCompany);
+    const key = normalizeOrgSlug(raw);
+    const nkey = nameKey(raw);
 
-    if (!orgSlug && !companySlug) {
+    if (!orgSlug && !companySlug && !key && !nkey) {
       return NextResponse.json({
         success: false,
         error: "No company specified.",
@@ -34,29 +44,76 @@ export async function GET(req: NextRequest) {
     type OrgRow = { id: string; name: string; slug: string };
     let orgRow: OrgRow | undefined;
 
-    if (orgSlug) {
+    const trySlug = async (slug: string) => {
+      if (!slug || orgRow) return;
       const { rows } = await sql`
         SELECT id, name, slug FROM organizations
-        WHERE lower(slug) = ${orgSlug}
-        LIMIT 1;
-      `;
+        WHERE lower(slug) = ${slug}
+        LIMIT 1;`;
       orgRow = rows[0] as OrgRow | undefined;
-    }
-    if (!orgRow) {
-      // Company link (or an org link that is really a company slug) -
-      // resolve up to its organization. - resolve up to its organization.
-      const { rows } = await sql`
+      if (orgRow) return;
+      const { rows: cRows } = await sql`
         SELECT o.id, o.name, o.slug
         FROM companies c
         JOIN organizations o ON o.id = c.org_id
-        WHERE lower(c.slug) = ${companySlug || orgSlug}
-        LIMIT 1;
-      `;
+        WHERE lower(c.slug) = ${slug}
+        LIMIT 1;`;
+      orgRow = cRows[0] as OrgRow | undefined;
+    };
+
+    await trySlug(orgSlug);
+    await trySlug(companySlug);
+    await trySlug(key);
+
+    // UUID: org id or company id (legacy / copied links).
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!orgRow && uuidRe.test(raw)) {
+      const { rows } = await sql`
+        SELECT id, name, slug FROM organizations WHERE id = ${raw} LIMIT 1;`;
       orgRow = rows[0] as OrgRow | undefined;
+      if (!orgRow) {
+        const { rows: cRows } = await sql`
+          SELECT o.id, o.name, o.slug
+          FROM companies c JOIN organizations o ON o.id = c.org_id
+          WHERE c.id = ${raw} LIMIT 1;`;
+        orgRow = cRows[0] as OrgRow | undefined;
+      }
+    }
+
+    // Display-name match: "Dugger's", "Duggers PHX / ERS", etc.
+    if (!orgRow && nkey.length >= 3) {
+      const { rows } = await sql`
+        SELECT id, name, slug FROM organizations
+        WHERE regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = ${nkey}
+        LIMIT 1;`;
+      orgRow = rows[0] as OrgRow | undefined;
+      if (!orgRow) {
+        const { rows: cRows } = await sql`
+          SELECT o.id, o.name, o.slug
+          FROM companies c JOIN organizations o ON o.id = c.org_id
+          WHERE regexp_replace(lower(c.name), '[^a-z0-9]', '', 'g') = ${nkey}
+          LIMIT 1;`;
+        orgRow = cRows[0] as OrgRow | undefined;
+      }
+      // Prefix: typing "duggers" should match org name "Dugger's".
+      if (!orgRow) {
+        const { rows: pRows } = await sql`
+          SELECT id, name, slug FROM organizations
+          WHERE regexp_replace(lower(name), '[^a-z0-9]', '', 'g') LIKE ${nkey + "%"}
+          LIMIT 2;`;
+        if (pRows.length === 1) orgRow = pRows[0] as OrgRow;
+      }
     }
 
     if (!orgRow) {
-      // Same shape as "no drivers" - never confirm which slugs exist.
+      // Temporary diagnostic (no PII): raw + normalized forms only.
+      console.info("[auth-driver/list] unknown company", {
+        raw: raw.slice(0, 80),
+        orgSlug,
+        companySlug,
+        key,
+        nkey: nkey.slice(0, 80),
+      });
       return NextResponse.json({
         success: false,
         error: "Unknown company.",
@@ -65,7 +122,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Every active driver in every company under this organization.
     const { rows: drivers } = await sql`
       SELECT d.id,
              d.name,
