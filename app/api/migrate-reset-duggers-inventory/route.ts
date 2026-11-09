@@ -55,6 +55,11 @@ export async function GET(req: NextRequest) {
   const auth = await authorize(req);
   if (!auth.ok) return auth.res;
 
+  // Sidebar / page gate: session is a Duggers owner/admin.
+  if (req.nextUrl.searchParams.get("check") === "1") {
+    return NextResponse.json({ success: true, platform: true });
+  }
+
   const dry = req.nextUrl.searchParams.get("dry_run") === "1";
   const doExport = req.nextUrl.searchParams.get("export") === "1" || !dry;
 
