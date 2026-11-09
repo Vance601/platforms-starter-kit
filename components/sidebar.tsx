@@ -1,11 +1,12 @@
 "use client"
+import { useOrgName } from "@/lib/use-org-name"
+
+import type React from "react"
+
+import Link from "next/link"
+import { useEffect, useState } from "react"
+import { usePathname } from "next/navigation"
 import {
-  useOrgName } from "@/lib/use-org-name",
-  import type React from "react",
-  import Link from "next/link",
-  import { useEffect, useState } from "react",
-  import { usePathname } from "next/navigation",
-  import {,
   BarChart3,
   Boxes,
   Home,
