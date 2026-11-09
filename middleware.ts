@@ -18,6 +18,8 @@ const PUBLIC_ROUTES = [
   "/api/public/signup",
   "/api/public/demo", // one-click demo (rate limited)
   "/api/cron/demo-cleanup", // checks CRON_SECRET itself
+  "/api/migrate-reset-duggers-inventory", // MIGRATE_SECRET or platform owner inside
+  "/api/migrate-battery-catalog", // MIGRATE_SECRET or platform owner inside
 ];
 
 // APIs the PIN-based driver app calls. Each verifies the driver_session

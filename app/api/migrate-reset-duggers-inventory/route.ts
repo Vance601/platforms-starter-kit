@@ -31,9 +31,11 @@ async function authorize(req: NextRequest): Promise<
   | { ok: true; userId: string | null }
   | { ok: false; res: NextResponse }
 > {
-  const secret = req.nextUrl.searchParams.get("secret") || req.headers.get("x-migrate-secret") || "";
-  const expected = process.env.MIGRATE_SECRET || "";
-  if (expected && secret && secret === expected) {
+  const secret = (req.nextUrl.searchParams.get("secret") || req.headers.get("x-migrate-secret") || "").trim();
+  const migrate = (process.env.MIGRATE_SECRET || "").trim();
+  const cron = (process.env.CRON_SECRET || "").trim();
+  // Either server secret works; both live only in Vercel env / the box secrets dir.
+  if (secret && ((migrate && secret === migrate) || (cron && secret === cron))) {
     return { ok: true, userId: null };
   }
   const user = await getCurrentUser();
