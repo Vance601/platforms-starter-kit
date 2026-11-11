@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Plus, MapPin, Edit, Trash2 } from "lucide-react"
+import { RemoveLocationDialog } from "@/components/remove-location-dialog"
 
 type Company = { id: string; name: string; slug: string; active: boolean }
 type Location = {
@@ -37,6 +38,7 @@ export function LocationSettings() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [flash, setFlash] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<Location | null>(null)
 
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
@@ -161,29 +163,6 @@ export function LocationSettings() {
     }
   }
 
-  async function handleDelete(loc: Location) {
-    const warn =
-      loc.battery_count > 0
-        ? `"${loc.name}" has ${loc.battery_count} batteries tied to it. It will be marked inactive (hidden), but its history is kept. Continue?`
-        : `Mark "${loc.name}" inactive? It will be hidden from pickers but its history is kept.`
-    if (!confirm(warn)) return
-    setError(null)
-    setFlash(null)
-    try {
-      const res = await fetch("/api/locations/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: loc.id }),
-      })
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || "Failed to delete location")
-      setFlash(`Location "${json.name}" marked inactive.`)
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete location")
-    }
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center mb-4">
@@ -293,15 +272,17 @@ export function LocationSettings() {
                   <Edit className="h-4 w-4 mr-2" />
                   Edit
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-red-600 hover:text-red-700"
-                  onClick={() => handleDelete(location)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
+                {location.active && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => { setRemoving(location); setError(null); setFlash(null) }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Remove location
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           ))}
@@ -356,6 +337,13 @@ export function LocationSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {removing && (
+        <RemoveLocationDialog
+          loc={removing}
+          onClose={() => setRemoving(null)}
+          onDone={(msg) => { setFlash(msg); setRemoving(null); load() }}
+        />
+      )}
     </div>
   )
 }

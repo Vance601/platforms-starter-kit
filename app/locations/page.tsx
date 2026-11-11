@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Building2, MapPin, PlusCircle, RefreshCw } from "lucide-react"
+import { Building2, MapPin, PlusCircle, RefreshCw, Trash2 } from "lucide-react"
+import { RemoveLocationDialog } from "@/components/remove-location-dialog"
 
 type Company = { id: string; name: string; slug: string; active: boolean }
 type Location = {
@@ -35,6 +36,7 @@ export default function LocationsPage() {
   const [zip, setZip] = useState("")
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<Location | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -205,12 +207,31 @@ export default function LocationsPage() {
                         Inactive
                       </span>
                     )}
+                    {loc.active && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 text-red-600 hover:text-red-700"
+                        onClick={() => { setRemoving(loc); setError(null); setFlash(null) }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Remove location
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               ))}
             </div>
           </div>
         ))
+      )}
+
+      {removing && (
+        <RemoveLocationDialog
+          loc={removing}
+          onClose={() => setRemoving(null)}
+          onDone={(msg) => { setFlash(msg); setRemoving(null); load() }}
+        />
       )}
     </div>
   )
