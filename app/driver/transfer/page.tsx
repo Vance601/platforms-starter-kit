@@ -180,6 +180,10 @@ export default function TransferPage() {
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>
               On your truck #{stock.truck.truck_number}: {stock.batteries.length} batter{stock.batteries.length === 1 ? "y" : "ies"}
             </div>
+            <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 8 }}>
+              To send a battery to another truck or back to the warehouse, open{" "}
+              <a href="/driver/move" style={{ color: "#86efac" }}>Move</a>.
+            </div>
             {stock.batteries.length === 0 ? (
               <div style={{ fontSize: 13, color: "#94a3b8" }}>No batteries loaded yet. Use Load to add some.</div>
             ) : (

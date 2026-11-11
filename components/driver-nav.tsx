@@ -8,6 +8,7 @@ type NavItem = { href: string; label: string };
 const ITEMS: NavItem[] = [
   { href: "/driver/transfer", label: "Truck" },
   { href: "/driver/load", label: "Load" },
+  { href: "/driver/move", label: "Move" },
   { href: "/driver/sell", label: "Sell" },
   { href: "/driver/cores", label: "Cores" },
   { href: "/driver/pin", label: "PIN" },
