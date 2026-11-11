@@ -43,6 +43,12 @@ export default function AppShell({
     )
   }
 
+  // Dedicated print views must not include the sidebar, banner, or padding,
+  // or a thermal printer will print a screenshot of the whole app.
+  if (pathname?.startsWith("/print")) {
+    return <>{children}</>
+  }
+
   // Public pages (signed-out flows) render without the owner sidebar.
   const PUBLIC_NO_SIDEBAR = ["/login", "/signup", "/forgot-password", "/reset-password", "/warranty-lookup"]
   if (PUBLIC_NO_SIDEBAR.some((p) => pathname === p || pathname?.startsWith(p + "/"))) {
