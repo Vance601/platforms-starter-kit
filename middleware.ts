@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   "/signup", // public self sign-up page (NOT /api/signup, which needs a session)
   "/api/public/signup",
   "/api/public/demo", // one-click demo (rate limited)
+  "/video", // public shareable ad page
   "/api/cron/demo-cleanup", // checks CRON_SECRET itself
   "/api/migrate-reset-duggers-inventory", // MIGRATE_SECRET or platform owner inside
   "/api/migrate-battery-catalog", // MIGRATE_SECRET or platform owner inside
@@ -115,5 +116,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|.*\\.png$|.*\\.jpg$|.*\\.webp$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml|.*\\.png$|.*\\.jpg$|.*\\.webp$|.*\\.mp4$).*)"],
 };

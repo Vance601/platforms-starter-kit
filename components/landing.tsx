@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import DemoLeadForm from "@/components/demo-lead-form";
 import Image from "next/image";
 import BrandLogo from "@/components/brand-logo";
+import AdVideo from "@/components/ad-video";
 
 // Public landing page for signed-out visitors at "/". Rendered as a full-screen
 // layer so the staff sidebar from the app shell is not shown.
@@ -57,12 +58,29 @@ export default function Landing() {
           <button onClick={() => setOpen(true)} style={{ ...btn, background: "#3b82f6", color: "#fff" }}>
             Try the demo
           </button>
+          <a
+            href="#video"
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById("video")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ ...btn, background: "transparent", color: "#f8fafc", border: "1px solid #475569" }}
+          >
+            Watch the video
+          </a>
           <a href="/login" style={{ ...btn, background: "transparent", color: "#f8fafc", border: "1px solid #475569" }}>Log in</a>
         </div>
         {open && <DemoLeadForm onClose={() => setOpen(false)} />}
       </main>
       </div>
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "0 28px 60px" }}>
+        <section id="video" style={{ marginTop: 8, marginBottom: 36, scrollMarginTop: 24 }}>
+          <h2 style={{ fontSize: 28, fontWeight: 800, margin: "0 0 8px" }}>See Battery City in 60 seconds</h2>
+          <p style={{ color: "#cbd5e1", fontSize: 16, margin: "0 0 18px", maxWidth: 640 }}>
+            A one-minute look at scanning, inventory, drivers, and warranties — then try the free demo above.
+          </p>
+          <AdVideo />
+        </section>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 18, marginTop: 8 }}>
           {features.map(([t, d]) => (
             <div key={t} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid #334155", borderRadius: 14, padding: 20 }}>
