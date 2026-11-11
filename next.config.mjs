@@ -13,7 +13,7 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/:path((?!signup$|login$|warranty-lookup$|robots\\.txt$|sitemap\\.xml$|_next/).+)",
+        source: "/:path((?!signup$|login$|warranty-lookup$|video$|robots\\.txt$|sitemap\\.xml$|_next/).+)",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
     ]
