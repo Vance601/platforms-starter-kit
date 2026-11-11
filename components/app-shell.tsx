@@ -50,7 +50,7 @@ export default function AppShell({
   }
 
   // Public pages (signed-out flows) render without the owner sidebar.
-  const PUBLIC_NO_SIDEBAR = ["/login", "/signup", "/forgot-password", "/reset-password", "/warranty-lookup"]
+  const PUBLIC_NO_SIDEBAR = ["/login", "/signup", "/forgot-password", "/reset-password", "/warranty-lookup", "/video"]
   if (PUBLIC_NO_SIDEBAR.some((p) => pathname === p || pathname?.startsWith(p + "/"))) {
     return <main className="min-h-screen p-4">{children}</main>
   }
