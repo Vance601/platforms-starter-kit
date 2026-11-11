@@ -107,7 +107,12 @@ export default function PrintLabelsPage() {
       <div className="print:hidden mx-auto max-w-3xl">
         <h1 className="text-2xl font-bold text-gray-900">Print Battery Labels</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Pick a delivery, then print QR labels (2&quot; x 1&quot;) for every battery in it.
+          Pick a delivery, then print one Code 128 label per battery. Default size is 4&quot; × 3&quot; die-cut for the Zebra ZD421.
+          {" "}
+          <a href="/print/labels?demo=1&size=4x3" target="_blank" rel="noreferrer" className="text-blue-600 underline">
+            Open a 4×3 preview
+          </a>
+          {" "}with a sample barcode (no live stock).
         </p>
 
         {error ? (
@@ -138,7 +143,7 @@ export default function PrintLabelsPage() {
         {labels.length > 0 ? (
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <a
-              href={`/print/labels?deliveryId=${encodeURIComponent(selectedId)}`}
+              href={`/print/labels?size=4x3&deliveryId=${encodeURIComponent(selectedId)}`}
               target="_blank"
               rel="noreferrer"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
@@ -146,8 +151,8 @@ export default function PrintLabelsPage() {
               Print {labels.length} labels
             </a>
             <span className="text-sm text-gray-500">
-              Opens a print view: one Code 128 label per barcode, sized for a Zebra ZD421.
-              Default 2&quot; × 1&quot;, scale 100%, margins none.
+              Opens a print view: one Code 128 label per barcode, centered and large on 4&quot; × 3&quot; stock.
+              Scale 100%, margins none. You can change the size on the print page.
             </span>
           </div>
         ) : null}
