@@ -1,7 +1,8 @@
 "use client";
 
+import { PRINT_LABELS_SESSION_KEY, type LabelItem } from "@/lib/label-print";
+
 import { useState, useEffect } from "react";
-import { QRCodeSVG } from "qrcode.react";
 
 type Battery = {
   id: string;
@@ -90,19 +91,26 @@ export default function BatteriesPage() {
   const uniqueModels = Array.from(new Set(batteries.map(b => b.model).filter(Boolean))) as string[];
   uniqueModels.sort();
 
-  // Labels are rendered in a hidden block on this page and revealed by the
-  // print stylesheet. The previous version opened a new window and pulled one
-  // QR image per battery from an external service - 94 network requests at
-  // once locked the browser up. QR codes are now generated locally with
-  // qrcode.react, so printing does no network work at all.
-  //
-  // The old sheet also set page-break-after on every label, which is why each
-  // one came out on its own page. They now tile across letter sheets.
-  const [labelCols, setLabelCols] = useState(3);
+  function openLabelPrint(items: { id: string; barcode: string; classification?: string; model?: string | null; modelDisplay?: string | null }[]) {
+    const labels: LabelItem[] = items.map((b) => ({
+      id: b.id,
+      barcode: b.barcode,
+      model: b.modelDisplay || b.model || null,
+      type: b.classification || null,
+    }));
+    if (!labels.length) return;
+    try {
+      sessionStorage.setItem(PRINT_LABELS_SESSION_KEY, JSON.stringify({ labels, size: "2x1", copies: 1 }));
+    } catch {
+      // Private browsing — fall through to ids in the URL.
+    }
+    const ids = labels.map((l) => l.id).join(",");
+    const url = ids.length < 1800 ? `/print/labels?ids=${encodeURIComponent(ids)}` : "/print/labels?src=session";
+    window.open(url, "_blank", "noopener");
+  }
 
   function printLabels() {
-    if (filteredBatteries.length === 0) return;
-    window.print();
+    openLabelPrint(filteredBatteries);
   }
 
   // Classification cards count the same live set the table/filters use
@@ -332,17 +340,7 @@ export default function BatteriesPage() {
         >
           Print {filteredBatteries.length} label{filteredBatteries.length === 1 ? "" : "s"}
         </button>
-        <label style={{ fontSize: 12, color: "#666", display: "flex", alignItems: "center", gap: 6 }}>
-          per row
-          <select
-            value={labelCols}
-            onChange={e => setLabelCols(Number(e.target.value))}
-            style={{ padding: "4px 6px", fontSize: 12 }}
-          >
-            <option value={3}>3 (0.5in margins)</option>
-            <option value={4}>4 (edge to edge)</option>
-          </select>
-        </label>
+
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "14px" }}>
@@ -363,7 +361,16 @@ export default function BatteriesPage() {
         <tbody>
           {filteredBatteries.map(b => (
             <tr key={b.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "12px 8px", fontFamily: "monospace", fontSize: "13px" }}>{b.barcode}</td>
+              <td style={{ padding: "12px 8px", fontFamily: "monospace", fontSize: "13px" }}>
+                {b.barcode}
+                <button
+                  type="button"
+                  onClick={() => openLabelPrint([b])}
+                  style={{ marginLeft: 8, fontFamily: "system-ui", fontSize: 11, padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+                >
+                  Label
+                </button>
+              </td>
               <td style={{ padding: "12px 8px" }}>{b.classification}</td>
               <td style={{ padding: "12px 8px", fontWeight: 500 }}>{b.modelDisplay || "—"}</td>
               <td style={{ padding: "12px 8px" }}>
@@ -397,58 +404,6 @@ export default function BatteriesPage() {
           No batteries match your filters
         </div>
       )}
-
-      {/* Hidden on screen, shown only by the print stylesheet. */}
-      <style>{`
-        @media print {
-          @page { size: letter; margin: ${labelCols === 3 ? "0.5in" : "0"}; }
-          body * { visibility: hidden !important; }
-          #label-sheet, #label-sheet * { visibility: visible !important; }
-          #label-sheet {
-            display: grid !important;
-            grid-template-columns: repeat(${labelCols}, 2in);
-            position: absolute; left: 0; top: 0;
-          }
-        }
-      `}</style>
-
-      <div
-        id="label-sheet"
-        style={{ display: "none", gridTemplateColumns: `repeat(${labelCols}, 2in)` }}
-      >
-        {filteredBatteries.map(b => (
-          <div
-            key={`lbl-${b.id}`}
-            style={{
-              width: "2in",
-              height: "1in",
-              padding: "0.05in",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.06in",
-              overflow: "hidden",
-              boxSizing: "border-box",
-            }}
-          >
-            <QRCodeSVG value={b.barcode} size={82} level="M" />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontFamily: "monospace",
-                  fontSize: "7.5pt",
-                  lineHeight: 1.15,
-                  wordBreak: "break-all",
-                }}
-              >
-                {b.barcode}
-              </div>
-              <div style={{ fontSize: "7pt", color: "#333", marginTop: 2 }}>
-                {b.modelDisplay || b.model || ""}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

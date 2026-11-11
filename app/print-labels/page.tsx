@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useOrgSettings } from "@/lib/use-org-settings";
-import { QRCodeSVG } from "qrcode.react";
 
 type Delivery = {
   id: string;
@@ -137,17 +136,26 @@ export default function PrintLabelsPage() {
         </div>
 
         {labels.length > 0 ? (
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              onClick={() => window.print()}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <a
+              href={`/print/labels?deliveryId=${encodeURIComponent(selectedId)}`}
+              target="_blank"
+              rel="noreferrer"
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
             >
               Print {labels.length} labels
-            </button>
+            </a>
             <span className="text-sm text-gray-500">
-              Set your printer to the 2&quot; x 1&quot; label size, margins off.
+              Opens a print view: one Code 128 label per barcode, sized for a Zebra ZD421.
+              Default 2&quot; × 1&quot;, scale 100%, margins none.
             </span>
           </div>
+        ) : null}
+
+        {labels.length > 0 ? (
+          <p className="mt-3 text-sm text-gray-600">
+            {labels.length} batter{labels.length === 1 ? "y" : "ies"} in this delivery will print.
+          </p>
         ) : null}
 
         {labelsLoading ? <p className="mt-4 text-sm text-gray-500">Loading batteries...</p> : null}
@@ -156,71 +164,6 @@ export default function PrintLabelsPage() {
         ) : null}
       </div>
 
-      <div className="labels-sheet mt-6">
-        {labels.map((b) => (
-          <div key={b.id} className="label">
-            <QRCodeSVG value={b.barcode} size={64} level="M" />
-            <div className="label-text">
-              <div className="label-code">{b.barcode}</div>
-              {b.model_code ? <div className="label-model">Model {b.model_code}</div> : null}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <style jsx global>{`
-        .labels-sheet {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-        .label {
-          width: 2in;
-          height: 1in;
-          border: 1px solid #ddd;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 6px;
-          box-sizing: border-box;
-          overflow: hidden;
-        }
-        .label-text {
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          min-width: 0;
-        }
-        .label-code {
-          font-family: monospace;
-          font-size: 8.5px;
-          line-height: 1.1;
-          word-break: break-all;
-        }
-        .label-model {
-          font-size: 8px;
-          color: #444;
-          margin-top: 2px;
-        }
-        @media print {
-          .label {
-            border: none;
-            page-break-after: always;
-            break-after: page;
-            width: 2in;
-            height: 1in;
-            margin: 0;
-          }
-          .labels-sheet {
-            display: block;
-            gap: 0;
-          }
-          @page {
-            size: 2in 1in;
-            margin: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 }

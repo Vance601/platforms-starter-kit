@@ -34,6 +34,27 @@ export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("deliveryId");
 
   try {
+    // ---------- ids=uuid,uuid : a selection (org-scoped) ----------
+    const rawIds = req.nextUrl.searchParams.get("ids");
+    if (rawIds && !raw) {
+      const ids = rawIds.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 2000);
+      if (!ids.length) return NextResponse.json({ success: true, batteries: [] });
+      const { rows: batteries } = await sql.query(
+        `SELECT b.id, b.barcode,
+                COALESCE(mdl.code, '') AS model_code,
+                COALESCE(bt.code, typ.code, '') AS type_code
+         FROM batteries b
+         JOIN companies c ON c.id = b.company_id
+         LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+         LEFT JOIN battery_types typ ON typ.id = mdl.battery_type_id
+         LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
+         WHERE c.org_id = $1 AND b.id::text = ANY($2::text[])
+         ORDER BY b.barcode ASC`,
+        [user.orgId, ids],
+      );
+      return NextResponse.json({ success: true, batteries });
+    }
+
     // ---------- No id: list every batch that has batteries to label ----------
     if (!raw) {
       const { rows: receipts } = await sql`
@@ -90,11 +111,14 @@ export async function GET(req: NextRequest) {
         SELECT
           b.id,
           b.barcode,
-          COALESCE(mdl.code, '') AS model_code
+          COALESCE(mdl.code, '') AS model_code,
+          COALESCE(bt.code, typ.code, '') AS type_code
         FROM batteries b
         JOIN mbs_invoices i ON i.id = b.mbs_invoice_id
         JOIN companies c    ON c.id = i.company_id
         LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+        LEFT JOIN battery_types typ ON typ.id = mdl.battery_type_id
+        LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
         WHERE b.mbs_invoice_id = ${id}
           AND c.org_id = ${user.orgId}
         ORDER BY b.barcode ASC;
@@ -106,11 +130,14 @@ export async function GET(req: NextRequest) {
       SELECT
         b.id,
         b.barcode,
-        COALESCE(mdl.code, '') AS model_code
+        COALESCE(mdl.code, '') AS model_code,
+        COALESCE(bt.code, typ.code, '') AS type_code
       FROM batteries b
       JOIN delivery_receipts dr ON dr.id = b.delivery_receipt_id
       JOIN companies c ON c.id = dr.company_id
       LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+      LEFT JOIN battery_types typ ON typ.id = mdl.battery_type_id
+      LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       WHERE b.delivery_receipt_id = ${id}
         AND c.org_id = ${user.orgId}
       ORDER BY b.barcode ASC;
