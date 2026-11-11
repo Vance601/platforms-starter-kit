@@ -31,6 +31,7 @@ const DRIVER_APIS = [
   "/api/battery/sellable",
   "/api/battery/loadable",
   "/api/battery/load",
+  "/api/battery/transfer",
   "/api/battery/sell",
   "/api/battery/return-core",
   "/api/battery/sold-list",

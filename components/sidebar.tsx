@@ -224,7 +224,7 @@ export function Sidebar({ className }: React.HTMLAttributes<HTMLDivElement>) {
           <Button variant={pathname === "/admin/assign-trucks" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
             <Link href="/admin/assign-trucks">
               <Truck className="mr-2 h-4 w-4" />
-              Assign to Trucks
+              Assign & Transfer
             </Link>
           </Button>
           <Button variant={pathname === "/print-labels" ? "secondary" : "ghost"} className="w-full justify-start" asChild>
