@@ -6,7 +6,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // Removes expired DEMO orgs only (organizations.is_demo = true AND demo_expires_at < now()).
-// Protected by CRON_SECRET. Log-only unless DEMO_CLEANUP_DELETE=true.
+// Protected by CRON_SECRET (Vercel cron sends Authorization: Bearer <CRON_SECRET>).
+// Deletes expired demo orgs (is_demo = true AND demo_expires_at < now()) only.
+// Set DEMO_CLEANUP_DELETE=false for a dry run (log-only, no deletes).
 
 const REF_COLS: Record<string, string> = {
   org_id: "organizations", company_id: "companies", location_id: "locations", truck_id: "trucks",
@@ -83,13 +85,16 @@ async function cleanOrg(cols: Cols, orgId: string, doDelete: boolean) {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  const secret = (process.env.CRON_SECRET || "").trim();
+  const auth = (req.headers.get("authorization") || "").trim();
+  // Vercel scheduled crons send "Authorization: Bearer <CRON_SECRET>".
+  if (!secret || auth !== `Bearer ${secret}`) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
   try {
     await ensureDemoTables();
-    const doDelete = process.env.DEMO_CLEANUP_DELETE === "true";
+    // Default is to delete expired demo orgs. Dry-run only when explicitly disabled.
+    const doDelete = process.env.DEMO_CLEANUP_DELETE !== "false";
     const { rows } = await sql`
       SELECT id::text AS id, name FROM organizations
       WHERE is_demo = true AND demo_expires_at IS NOT NULL AND demo_expires_at < now()
