@@ -83,9 +83,11 @@ export default function AdminAssignTrucks() {
             data.locations.find((l: LocationOpt) => /elwood/i.test(l.name)) || data.locations[0];
           setToLocationId(prefer.id);
         }
+      } else {
+        setError(data.error || "Could not load trucks and locations for transfers.");
       }
     } catch {
-      // assign tab can still work if the move list fails
+      setError("Network error loading transfers. The warehouse-to-truck tab may still work.");
     } finally {
       setLoading(false);
     }

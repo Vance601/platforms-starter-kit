@@ -24,8 +24,22 @@ function verifyDriverSession(token: string | undefined): string | null {
   return driverId;
 }
 
+
+/** Don't leak Postgres internals (missing column, etc.) to the driver app. */
+function publicError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Something went wrong.";
+  if (
+    /column .*(does not exist|was not found)|relation .* does not exist|syntax error at or near|permission denied|failed to connect|timeout|ECONN|ENOTFOUND/i.test(
+      msg,
+    )
+  ) {
+    return "Couldn't load or save that just now. Please try again. If it keeps happening, contact support.";
+  }
+  return msg;
+}
+
 type Actor =
-  | { kind: "driver"; driverId: string; driverName: string; companyId: string; claimedTruckId: string }
+  | { kind: "driver"; driverId: string; driverName: string; companyId: string; claimedTruckId: string | null }
   | { kind: "staff"; userId: string; orgId: string; actorName: string };
 
 async function resolveActor(req: NextRequest): Promise<
@@ -41,15 +55,6 @@ async function resolveActor(req: NextRequest): Promise<
     const d = driverRows[0];
     const { rows: truckRows } = await sql`
       SELECT id FROM trucks WHERE current_driver_id = ${driverId} LIMIT 1;`;
-    if (!truckRows.length) {
-      return {
-        ok: false,
-        res: NextResponse.json(
-          { success: false, error: "You haven't claimed a truck yet. Claim a truck first, then move batteries." },
-          { status: 409 },
-        ),
-      };
-    }
     return {
       ok: true,
       actor: {
@@ -57,7 +62,7 @@ async function resolveActor(req: NextRequest): Promise<
         driverId: d.id,
         driverName: d.name,
         companyId: d.company_id,
-        claimedTruckId: truckRows[0].id,
+        claimedTruckId: truckRows[0]?.id ?? null,
       },
     };
   }
@@ -89,20 +94,32 @@ export async function GET(req: NextRequest) {
     const { actor } = r;
 
     if (actor.kind === "driver") {
-      const { rows: batteries } = await sql`
-        SELECT b.id, b.barcode, b.serial_number, b.status, b.location_id,
-               b.truck_id, t.truck_number, l.name AS location_name,
-               COALESCE(mdl.code, '') AS model_code
-        FROM batteries b
-        JOIN trucks t ON t.id = b.truck_id
-        LEFT JOIN locations l ON l.id = b.location_id
-        LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
-        WHERE b.status = 'on_truck'
-          AND b.truck_id = ${actor.claimedTruckId}
-          AND b.company_id = ${actor.companyId}
-        ORDER BY b.barcode;`;
+      // Production trucks have no location column. Location lives on the
+      // battery (and on the company's locations list). Selecting a trucks
+      // location column made this GET fail, so the Move page showed empty
+      // dropdowns and a false "claim a truck first" message.
+      let batteries: Record<string, unknown>[] = [];
+      let claimed: Record<string, unknown> | null = null;
+      if (actor.claimedTruckId) {
+        const { rows: batRows } = await sql`
+          SELECT b.id, b.barcode, b.serial_number, b.status, b.location_id,
+                 b.truck_id, t.truck_number, l.name AS location_name,
+                 COALESCE(mdl.code, '') AS model_code
+          FROM batteries b
+          JOIN trucks t ON t.id = b.truck_id
+          LEFT JOIN locations l ON l.id = b.location_id
+          LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+          WHERE b.status = 'on_truck'
+            AND b.truck_id = ${actor.claimedTruckId}
+            AND b.company_id = ${actor.companyId}
+          ORDER BY b.barcode;`;
+        batteries = batRows;
+        const { rows: claimedRows } = await sql`
+          SELECT id, truck_number FROM trucks WHERE id = ${actor.claimedTruckId} LIMIT 1;`;
+        claimed = claimedRows[0] || null;
+      }
       const { rows: trucks } = await sql`
-        SELECT t.id, t.truck_number, t.year_model, t.location_id, d.name AS driver_name
+        SELECT t.id, t.truck_number, t.year_model, d.name AS driver_name
         FROM trucks t
         LEFT JOIN drivers d ON d.id = t.current_driver_id
         WHERE t.company_id = ${actor.companyId} AND t.active = TRUE
@@ -112,12 +129,10 @@ export async function GET(req: NextRequest) {
         FROM locations l
         WHERE l.company_id = ${actor.companyId} AND l.active = TRUE
         ORDER BY l.name;`;
-      const { rows: claimed } = await sql`
-        SELECT id, truck_number FROM trucks WHERE id = ${actor.claimedTruckId} LIMIT 1;`;
       return NextResponse.json({
         success: true,
         role: "driver",
-        claimedTruck: claimed[0] || null,
+        claimedTruck: claimed,
         batteries,
         trucks,
         locations,
@@ -140,7 +155,7 @@ export async function GET(req: NextRequest) {
         AND c.org_id = ${actor.orgId}
       ORDER BY t.truck_number, b.barcode;`;
     const { rows: trucks } = await sql`
-      SELECT t.id, t.truck_number, t.year_model, t.location_id, t.company_id, d.name AS driver_name
+      SELECT t.id, t.truck_number, t.year_model, t.company_id, d.name AS driver_name
       FROM trucks t
       JOIN companies c ON c.id = t.company_id
       LEFT JOIN drivers d ON d.id = t.current_driver_id
@@ -155,7 +170,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, role: "staff", batteries, trucks, locations });
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { success: false, error: publicError(err) },
       { status: 500 },
     );
   }
@@ -168,6 +183,12 @@ export async function POST(req: NextRequest) {
     const { actor } = r;
 
     const body = await req.json().catch(() => ({}));
+    if (actor.kind === "driver" && !actor.claimedTruckId) {
+      return NextResponse.json(
+        { success: false, error: "You haven't claimed a truck yet. Claim a truck first, then move batteries." },
+        { status: 409 },
+      );
+    }
     const batteryId = String(body.batteryId || "").trim();
     const toTruckId = String(body.toTruckId || "").trim();
     const toLocationId = String(body.toLocationId || "").trim();
@@ -227,7 +248,7 @@ export async function POST(req: NextRequest) {
 
     if (toTruckId) {
       const { rows: destRows } = await sql`
-        SELECT t.id, t.truck_number, t.company_id, t.location_id, t.current_driver_id, t.active
+        SELECT t.id, t.truck_number, t.company_id, t.current_driver_id, t.active
         FROM trucks t WHERE t.id = ${toTruckId} LIMIT 1;`;
       const dest = destRows[0];
       if (!dest || dest.active === false) {
@@ -242,7 +263,6 @@ export async function POST(req: NextRequest) {
         SET status = 'on_truck',
             truck_id = ${dest.id},
             current_truck_id = ${dest.id},
-            location_id = ${dest.location_id},
             current_driver_id = NULL
         WHERE id = ${battery.id}
           AND status = 'on_truck'
@@ -263,7 +283,7 @@ export async function POST(req: NextRequest) {
              from_location_id, to_location_id, driver_id, approval_status, approved_at, notes)
           VALUES
             (${movementId}, ${battery.id}, 'on_truck', 'on_truck', ${fromTruckId}, ${dest.id},
-             ${battery.location_id}, ${dest.location_id}, ${actor.driverId}, 'approved', now(), ${note});`;
+             ${battery.location_id}, ${battery.location_id}, ${actor.driverId}, 'approved', now(), ${note});`;
       } else {
         await sql`
           INSERT INTO battery_movements
@@ -271,7 +291,7 @@ export async function POST(req: NextRequest) {
              from_location_id, to_location_id, recorded_by_id, approval_status, approved_at, notes)
           VALUES
             (${movementId}, ${battery.id}, 'on_truck', 'on_truck', ${fromTruckId}, ${dest.id},
-             ${battery.location_id}, ${dest.location_id}, ${actor.userId}, 'approved', now(), ${note});`;
+             ${battery.location_id}, ${battery.location_id}, ${actor.userId}, 'approved', now(), ${note});`;
       }
       message = `Battery ${battery.barcode} moved to truck #${dest.truck_number}.`;
       await logAudit({
@@ -358,7 +378,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: err instanceof Error ? err.message : "Unknown error" },
+      { success: false, error: publicError(err) },
       { status: 500 },
     );
   }
