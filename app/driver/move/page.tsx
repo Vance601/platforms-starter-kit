@@ -46,8 +46,10 @@ export default function DriverMovePage() {
       }
       if (!data.success) {
         setError(data.error || "Could not load batteries.");
-        setClaimed(null);
-        setBatteries([]);
+        // Keep any already-known claim. A load failure is not the same as
+        // "you have no truck."
+        if (data.trucks) setTrucks(data.trucks);
+        if (data.locations) setLocations(data.locations);
         return;
       }
       setClaimed(data.claimedTruck || null);
@@ -163,7 +165,7 @@ export default function DriverMovePage() {
           Take a battery off your truck and send it to another truck, or return it to the warehouse.
         </p>
 
-        {!loading && !claimed ? (
+        {!loading && !error && !claimed ? (
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 16, color: "#fcd34d" }}>
             Claim a truck first (Truck tab), then come back here to move stock.
           </div>
