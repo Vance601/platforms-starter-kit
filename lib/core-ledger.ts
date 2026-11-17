@@ -16,8 +16,11 @@ export interface CoreLedgerRow {
   barcode: string;
   is_warranty: boolean;
   sold_at: string | null;
+  sold_on_call_number: string | null;
   driver_id: string | null;
   driver_name: string;
+  truck_id: string | null;
+  truck_number: string | null;
   model_code: string;
   location_name: string;
   core_state: CoreState;
@@ -32,7 +35,7 @@ export async function getCoreLedger(
     WITH sold AS (
       SELECT b.id, b.barcode, b.status::text AS status,
              COALESCE(b.is_warranty, false) AS is_warranty,
-             b.sold_at, b.battery_model_id, b.location_id
+             b.sold_at, b.sold_on_call_number, b.battery_model_id, b.location_id
       FROM batteries b
       WHERE b.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
         AND (b.status IN ('sold', 'returned_core')
@@ -46,8 +49,11 @@ export async function getCoreLedger(
       s.barcode,
       s.is_warranty,
       s.sold_at,
+      s.sold_on_call_number,
       sm.driver_id,
       COALESCE(d.name, 'Unknown driver') AS driver_name,
+      sm.from_truck_id AS truck_id,
+      t.truck_number,
       COALESCE(mdl.code, 'Unknown model') AS model_code,
       COALESCE(l.name, 'Unknown location') AS location_name,
       CASE
@@ -57,10 +63,11 @@ export async function getCoreLedger(
       END AS core_state
     FROM sold s
     LEFT JOIN LATERAL (
-      SELECT m.driver_id FROM battery_movements m
+      SELECT m.driver_id, m.from_truck_id FROM battery_movements m
       WHERE m.battery_id = s.id AND m.to_status = 'sold'
       ORDER BY m.occurred_at DESC LIMIT 1
     ) sm ON true
+    LEFT JOIN trucks t           ON t.id = sm.from_truck_id
     LEFT JOIN LATERAL (
       SELECT bool_or(c.status = 'returned') AS has_returned,
              bool_or(c.status = 'customer_kept') AS has_kept

@@ -16,6 +16,7 @@ export const maxDuration = 30;
 
 const EMPTY = {
   outstanding: [],
+  owedCores: [],
   keptByDriver: [],
   keptByLocation: [],
   summary: {
@@ -59,17 +60,39 @@ export async function GET(req: NextRequest) {
     // Cores still owed, by driver and model, from the shared ledger
     // (lib/core-ledger.ts) so this matches Battery Audit and Driver Reconcile.
     const ledger = await getCoreLedger(user.orgId, from, to);
-    const owedMap = new Map<string, { driver_name: string; model_code: string; cores_owed: number }>();
+    const owedMap = new Map<string, { driver_name: string; truck_number: string | null; model_code: string; cores_owed: number }>();
+    const owedCores: {
+      barcode: string;
+      sold_on_call_number: string | null;
+      sold_at: string | null;
+      driver_name: string;
+      truck_number: string | null;
+      model_code: string;
+    }[] = [];
     for (const r of ledger) {
       if (r.core_state !== 'owed') continue;
-      const k = `${r.driver_name}|${r.model_code}`;
-      const e = owedMap.get(k) ?? { driver_name: r.driver_name, model_code: r.model_code, cores_owed: 0 };
+      const k = `${r.driver_name}|${r.truck_number || ''}|${r.model_code}`;
+      const e = owedMap.get(k) ?? {
+        driver_name: r.driver_name,
+        truck_number: r.truck_number,
+        model_code: r.model_code,
+        cores_owed: 0,
+      };
       e.cores_owed++;
       owedMap.set(k, e);
+      owedCores.push({
+        barcode: r.barcode,
+        sold_on_call_number: r.sold_on_call_number,
+        sold_at: r.sold_at,
+        driver_name: r.driver_name,
+        truck_number: r.truck_number,
+        model_code: r.model_code,
+      });
     }
     const outstanding = Array.from(owedMap.values()).sort(
-      (a, b) => b.cores_owed - a.cores_owed || a.driver_name.localeCompare(b.driver_name)
+      (a, b) => b.cores_owed - a.cores_owed || a.driver_name.localeCompare(b.driver_name) || (a.truck_number || '').localeCompare(b.truck_number || '')
     );
+    owedCores.sort((a, b) => (b.sold_at || '').localeCompare(a.sold_at || '') || a.barcode.localeCompare(b.barcode));
     const ledgerSummary = summarizeCores(ledger);
 
     // Counts and dollars per status.
@@ -168,6 +191,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       outstanding,
+      owedCores,
       keptByDriver: (keptByDriver as Record<string, unknown>[]).map((r) => ({
         driver_name: r.driver_name,
         cores_kept: Number(r.cores_kept) || 0,

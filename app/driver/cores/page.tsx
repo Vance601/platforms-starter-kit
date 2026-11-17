@@ -12,6 +12,8 @@ type OwedCore = {
   serial_number: string | null;
   sold_on_call_number: string | null;
   sold_at: string | null;
+  sale_driver_name: string | null;
+  sale_truck_number: string | null;
 };
 
 type ListResponse = {
@@ -123,7 +125,7 @@ export default function DriverCoresPage() {
         <DriverNav />
         <h1 className="mb-1 text-2xl font-bold text-white">Core Returns</h1>
         <p className="mb-5 text-sm text-slate-400">
-          For each sold battery, confirm whether you collected the old core.
+          For each battery you sold, or that was sold on the truck you have claimed, confirm whether you collected the old core.
         </p>
 
         {error ? (
@@ -140,7 +142,7 @@ export default function DriverCoresPage() {
 
         {cores.length === 0 ? (
           <div className="rounded-lg bg-slate-800 px-4 py-8 text-center text-slate-400">
-            No cores owed right now.
+            No cores owed on your sales or this truck.
           </div>
         ) : (
           <div className="space-y-3">
@@ -164,6 +166,8 @@ export default function DriverCoresPage() {
                       {c.sold_on_call_number
                         ? ` · Call #${c.sold_on_call_number}`
                         : ""}
+                      {c.sale_truck_number ? ` · Truck #${c.sale_truck_number}` : ""}
+                      {c.sale_driver_name ? ` · ${c.sale_driver_name}` : ""}
                     </div>
                   </div>
 

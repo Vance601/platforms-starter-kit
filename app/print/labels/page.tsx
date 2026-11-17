@@ -2,16 +2,16 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Code128 from "@/components/code128";
 import {
   DEFAULT_LABEL_SIZE,
   DEMO_LABELS,
+  LABEL_DPI,
   LABEL_SIZES,
   type LabelItem,
   type LabelSizeId,
   PRINT_LABELS_SESSION_KEY,
   type PrintLabelsPayload,
-  labelTypography,
+  labelSvg,
   labelsToZpl,
   parseLabelSize,
 } from "@/lib/label-print";
@@ -104,7 +104,6 @@ function PrintBatteryLabelsInner() {
   }, [labels, copies]);
 
   const dim = LABEL_SIZES[size];
-  const typo = labelTypography(dim);
 
   function downloadZpl() {
     const zpl = labelsToZpl(labels, size, copies);
@@ -122,7 +121,7 @@ function PrintBatteryLabelsInner() {
         <div>
           <h1>Print battery labels</h1>
           <p>
-            One label per barcode, sized to fill the stock and centered. Default is{" "}
+            One label per barcode, with a large QR code (the reliable scan target) and a Code 128 underneath when it fits. Default is{" "}
             <strong>4&quot; × 3&quot; die-cut</strong> for the Zebra ZD421. Pick a different size
             below if the roll is not 4×3.
           </p>
@@ -226,7 +225,7 @@ function PrintBatteryLabelsInner() {
           <p>
             If you send ZPL instead of the browser dialog, the file already sets{" "}
             <code>^PW812</code> and <code>^LL609</code> for 4×3 at 203 dpi, with gap tracking (
-            <code>^MNW</code>) and the barcode centered.
+            <code>^MNW</code>), a centered QR (<code>^BQ</code>) and an integer-module Code 128 (<code>^BC</code> / <code>^BY</code>) when it fits.
           </p>
         </details>
       </div>
@@ -236,31 +235,25 @@ function PrintBatteryLabelsInner() {
           Actual-size preview for {dim.wIn}&quot; × {dim.hIn}&quot; stock. The dashed box is one
           label; print uses the same layout with no margin.
         </p>
-        {sheet.map((l) => (
-          <div
-            key={l.key}
-            className="label"
-            style={{
-              width: `${dim.wIn}in`,
-              height: `${dim.hIn}in`,
-              padding: `${typo.padIn}in`,
-            }}
-          >
-            <div className="barcode" style={{ height: `${typo.barcodeFrac * 100}%` }}>
-              <Code128
-                value={l.barcode}
-                width={Math.round((dim.wIn - typo.padIn * 2) * 200)}
-                height={Math.round(dim.hIn * typo.barcodeFrac * 200)}
+        {sheet.map((l) => {
+          const { svg, layout } = labelSvg(l, size, LABEL_DPI);
+          return (
+            <div
+              key={l.key}
+              className="label"
+              style={{
+                width: `${layout.W / LABEL_DPI}in`,
+                height: `${layout.H / LABEL_DPI}in`,
+              }}
+            >
+              <div
+                className="label-art"
+                style={{ width: "100%", height: "100%" }}
+                dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>
-            <div className="code" style={{ fontSize: `${typo.codeIn}in` }}>
-              {l.barcode}
-            </div>
-            <div className="sub" style={{ fontSize: `${typo.subIn}in` }}>
-              {[l.type, l.model].filter(Boolean).join(" · ")}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <style jsx global>{`
@@ -293,19 +286,20 @@ function PrintBatteryLabelsInner() {
         .label {
           box-sizing: border-box;
           border: 1px dashed #cbd5e1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
           overflow: hidden;
           background: #fff;
           color: #000;
           text-align: center;
         }
-        .barcode { width: 100%; display: flex; justify-content: center; align-items: center; }
-        .barcode :global(svg) { width: 100%; height: 100%; display: block; }
-        .code { font-family: ui-monospace, Menlo, monospace; letter-spacing: 0.02em; margin-top: 0.06in; word-break: break-all; line-height: 1.15; font-weight: 650; }
-        .sub { font-family: system-ui, sans-serif; margin-top: 0.04in; color: #111; font-weight: 600; }
+        .label-art, .label-art svg {
+          display: block;
+          width: 100%;
+          height: 100%;
+          /* Exact device pixels: do not let the browser resample bars. */
+          image-rendering: pixelated;
+          image-rendering: crisp-edges;
+          shape-rendering: crispEdges;
+        }
         @media print {
           .no-print { display: none !important; }
           html, body, .label-print-root {

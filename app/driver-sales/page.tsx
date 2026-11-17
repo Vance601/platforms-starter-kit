@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
 
 type SaleRow = {
@@ -18,6 +18,22 @@ type CoreRow = {
   driver_id: string;
   cores_returned: number;
 };
+type SaleDetail = {
+  driver_id: string;
+  driver_name: string;
+  sold_at: string | null;
+  battery_group: string | null;
+  barcode: string | null;
+  serial_number: string | null;
+  quickbooks_invoice_id: string | null;
+  call_number: string | null;
+  customer: string | null;
+  is_warranty: boolean;
+  sale_amount: string | number | null;
+  cost: string | number | null;
+  core_status: string | null;
+  truck_number: string | null;
+};
 type ApiResponse = {
   success: boolean;
   error?: string;
@@ -25,9 +41,9 @@ type ApiResponse = {
   salesByDriver?: SaleRow[];
   typeByDriver?: TypeRow[];
   coresByDriver?: CoreRow[];
+  salesDetail?: SaleDetail[];
 };
 
-// A merged per-driver row the table renders.
 type MergedRow = {
   driverId: string;
   driverName: string;
@@ -36,6 +52,7 @@ type MergedRow = {
   paid: number;
   coresReturned: number;
   types: { name: string; count: number }[];
+  details: SaleDetail[];
 };
 
 function defaultStart(): string {
@@ -47,6 +64,32 @@ function defaultEnd(): string {
   return new Date().toISOString().split("T")[0];
 }
 
+function money(v: string | number | null | undefined): string {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function coreLabel(status: string | null | undefined): string {
+  if (!status || status === "owed") return "Owed";
+  if (status === "returned") return "Returned";
+  if (status === "customer_kept") return "Customer kept";
+  return status;
+}
+
+function invoiceLabel(d: SaleDetail): string {
+  const parts: string[] = [];
+  if (d.quickbooks_invoice_id) parts.push(`QB ${d.quickbooks_invoice_id}`);
+  if (d.call_number) parts.push(`Towbook #${d.call_number}`);
+  return parts.join(" · ") || "—";
+}
+
+function csvCell(v: unknown): string {
+  const s = v == null ? "" : String(v);
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
 export default function DriverSalesPage() {
   const [start, setStart] = useState(defaultStart());
   const [end, setEnd] = useState(defaultEnd());
@@ -54,6 +97,7 @@ export default function DriverSalesPage() {
   const [error, setError] = useState("");
   const [rows, setRows] = useState<MergedRow[]>([]);
   const [loadedRange, setLoadedRange] = useState<{ start: string; end: string } | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   async function load() {
     setLoading(true);
@@ -73,7 +117,6 @@ export default function DriverSalesPage() {
         return;
       }
 
-      // Merge the three arrays by driver_id.
       const map = new Map<string, MergedRow>();
 
       for (const s of data.salesByDriver || []) {
@@ -85,6 +128,7 @@ export default function DriverSalesPage() {
           paid: s.units_sold - s.warranties,
           coresReturned: 0,
           types: [],
+          details: [],
         });
       }
       for (const t of data.typeByDriver || []) {
@@ -96,7 +140,6 @@ export default function DriverSalesPage() {
       for (const c of data.coresByDriver || []) {
         let row = map.get(c.driver_id);
         if (!row) {
-          // Driver returned cores but had no sales in range - still show them.
           row = {
             driverId: c.driver_id,
             driverName: "(driver)",
@@ -105,10 +148,28 @@ export default function DriverSalesPage() {
             paid: 0,
             coresReturned: 0,
             types: [],
+            details: [],
           };
           map.set(c.driver_id, row);
         }
         row.coresReturned = c.cores_returned;
+      }
+      for (const d of data.salesDetail || []) {
+        let row = map.get(d.driver_id);
+        if (!row) {
+          row = {
+            driverId: d.driver_id,
+            driverName: d.driver_name || "(driver)",
+            unitsSold: 0,
+            warranties: 0,
+            paid: 0,
+            coresReturned: 0,
+            types: [],
+            details: [],
+          };
+          map.set(d.driver_id, row);
+        }
+        row.details.push(d);
       }
 
       const merged = Array.from(map.values()).sort(
@@ -127,45 +188,85 @@ export default function DriverSalesPage() {
     load();
   }, []);
 
-  function exportCSV() {
+  function exportCSV(detailed: boolean) {
     if (rows.length === 0) return;
-    const header = "Driver,Units Sold,Paid Sales,Warranties,Cores Returned,Type Breakdown\n";
-    const body = rows
-      .map((r) => {
-        const types = r.types.map((t) => `${t.name}:${t.count}`).join(" ");
-        // Wrap fields that may contain spaces/commas in quotes.
-        return [
-          `"${r.driverName}"`,
-          r.unitsSold,
-          r.paid,
-          r.warranties,
-          r.coresReturned,
-          `"${types}"`,
-        ].join(",");
-      })
-      .join("\n");
+    let text = "";
+    if (detailed) {
+      const header = [
+        "Date",
+        "Driver",
+        "Truck",
+        "Battery group",
+        "Battery ID",
+        "Serial",
+        "QuickBooks invoice",
+        "Towbook call #",
+        "Customer",
+        "Type",
+        "Sale amount",
+        "Cost (wholesale)",
+        "Core status",
+      ].join(",") + "\n";
+      const body = rows
+        .flatMap((r) =>
+          r.details.map((d) =>
+            [
+              csvCell(d.sold_at ? String(d.sold_at).slice(0, 10) : ""),
+              csvCell(r.driverName),
+              csvCell(d.truck_number ? `#${d.truck_number}` : ""),
+              csvCell(d.battery_group),
+              csvCell(d.barcode),
+              csvCell(d.serial_number),
+              csvCell(d.quickbooks_invoice_id),
+              csvCell(d.call_number),
+              csvCell(d.customer),
+              csvCell(d.is_warranty ? "Warranty" : "Paid"),
+              csvCell(d.sale_amount ?? ""),
+              csvCell(d.cost ?? ""),
+              csvCell(coreLabel(d.core_status)),
+            ].join(",")
+          )
+        )
+        .join("\n");
+      text = header + body + (body ? "\n" : "");
+    } else {
+      const header = "Driver,Units Sold,Paid Sales,Warranties,Cores Returned,Type Breakdown\n";
+      const body = rows
+        .map((r) => {
+          const types = r.types.map((t) => `${t.name}:${t.count}`).join(" ");
+          return [
+            csvCell(r.driverName),
+            r.unitsSold,
+            r.paid,
+            r.warranties,
+            r.coresReturned,
+            csvCell(types),
+          ].join(",");
+        })
+        .join("\n");
+      const totalUnits = rows.reduce((s, r) => s + r.unitsSold, 0);
+      const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
+      const totalWarr = rows.reduce((s, r) => s + r.warranties, 0);
+      const totalCores = rows.reduce((s, r) => s + r.coresReturned, 0);
+      const totalRow = `"TOTAL",${totalUnits},${totalPaid},${totalWarr},${totalCores},""`;
+      text = header + body + "\n" + totalRow;
+    }
 
-    const totalUnits = rows.reduce((s, r) => s + r.unitsSold, 0);
-    const totalPaid = rows.reduce((s, r) => s + r.paid, 0);
-    const totalWarr = rows.reduce((s, r) => s + r.warranties, 0);
-    const totalCores = rows.reduce((s, r) => s + r.coresReturned, 0);
-    const totalRow = `"TOTAL",${totalUnits},${totalPaid},${totalWarr},${totalCores},""`;
-
-    const blob = new Blob([header + body + "\n" + totalRow], {
-      type: "text/csv;charset=utf-8;",
-    });
+    const blob = new Blob([text], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `driver-sales-${start}-to-${end}.csv`);
+    link.setAttribute(
+      "download",
+      detailed ? `driver-sales-detail-${start}-to-${end}.csv` : `driver-sales-${start}-to-${end}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   }
 
-  // --- Styles (inline, neutral light theme to match the owner/admin pages) ---
   const page: React.CSSProperties = {
-    maxWidth: 1000,
+    maxWidth: 1100,
     margin: "0 auto",
     padding: "24px 16px",
     fontFamily: "system-ui, sans-serif",
@@ -227,15 +328,19 @@ export default function DriverSalesPage() {
   const totalWarr = rows.reduce((s, r) => s + r.warranties, 0);
   const totalCores = rows.reduce((s, r) => s + r.coresReturned, 0);
 
-  // --- Report ---
   return (
     <div style={page}>
       <Link href="/" style={backLink}>Back to Dashboard</Link>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <h1 style={{ fontSize: 28, fontWeight: 700 }}>Driver Sales Report</h1>
-        <button style={btnOutline} onClick={exportCSV} disabled={rows.length === 0}>
-          Export CSV
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button style={btnOutline} onClick={() => exportCSV(false)} disabled={rows.length === 0}>
+            Export CSV
+          </button>
+          <button style={btnOutline} onClick={() => exportCSV(true)} disabled={!rows.some((r) => r.details.length)}>
+            Export detailed CSV
+          </button>
+        </div>
       </div>
 
       <div style={card}>
@@ -256,6 +361,7 @@ export default function DriverSalesPage() {
           <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 10 }}>
             Showing {loadedRange.start.split("T")[0]} to {loadedRange.end.split("T")[0]}. Counts include
             paid and warranty sales; the Warranties column shows how many of Units Sold were warranties.
+            Click a driver to see each sale.
           </p>
         )}
         {error && <div style={{ color: "#dc2626", marginTop: 10, fontSize: 14 }}>{error}</div>}
@@ -271,6 +377,7 @@ export default function DriverSalesPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
+                  <th style={th}></th>
                   <th style={th}>Driver</th>
                   <th style={th}>Units Sold</th>
                   <th style={th}>Paid</th>
@@ -280,21 +387,82 @@ export default function DriverSalesPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.driverId}>
-                    <td style={{ ...td, fontWeight: 600 }}>{r.driverName}</td>
-                    <td style={td}>{r.unitsSold}</td>
-                    <td style={td}>{r.paid}</td>
-                    <td style={td}>{r.warranties}</td>
-                    <td style={td}>{r.coresReturned}</td>
-                    <td style={td}>
-                      {r.types.length === 0
-                        ? "-"
-                        : r.types.map((t) => `${t.name}: ${t.count}`).join(", ")}
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((r) => {
+                  const open = !!expanded[r.driverId];
+                  return (
+                    <Fragment key={r.driverId}>
+                      <tr
+                        key={r.driverId}
+                        onClick={() => setExpanded((prev) => ({ ...prev, [r.driverId]: !prev[r.driverId] }))}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td style={{ ...td, width: 28, color: "#64748b" }}>{open ? "▼" : "▶"}</td>
+                        <td style={{ ...td, fontWeight: 600 }}>{r.driverName}</td>
+                        <td style={td}>{r.unitsSold}</td>
+                        <td style={td}>{r.paid}</td>
+                        <td style={td}>{r.warranties}</td>
+                        <td style={td}>{r.coresReturned}</td>
+                        <td style={td}>
+                          {r.types.length === 0
+                            ? "-"
+                            : r.types.map((t) => `${t.name}: ${t.count}`).join(", ")}
+                        </td>
+                      </tr>
+                      {open ? (
+                        <tr key={`${r.driverId}-detail`}>
+                          <td colSpan={7} style={{ ...td, background: "#f8fafc", padding: 0 }}>
+                            {r.details.length === 0 ? (
+                              <p style={{ margin: 0, padding: "12px 16px", fontSize: 13, color: "#64748b" }}>
+                                No individual sales in this range.
+                              </p>
+                            ) : (
+                              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                  <tr>
+                                    <th style={th}>Date</th>
+                                    <th style={th}>Battery group</th>
+                                    <th style={th}>Battery ID</th>
+                                    <th style={th}>Invoice / call #</th>
+                                    <th style={th}>Customer</th>
+                                    <th style={th}>Type</th>
+                                    <th style={th}>Amount</th>
+                                    <th style={th}>Core</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.details.map((d, i) => (
+                                    <tr key={`${d.barcode || i}-${d.sold_at || i}`}>
+                                      <td style={td}>{d.sold_at ? String(d.sold_at).slice(0, 10) : "—"}</td>
+                                      <td style={td}>{d.battery_group || "—"}</td>
+                                      <td style={{ ...td, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}>
+                                        {d.barcode || "—"}
+                                        {d.serial_number ? <div style={{ color: "#64748b" }}>SN {d.serial_number}</div> : null}
+                                        {d.truck_number ? <div style={{ color: "#64748b" }}>Truck #{d.truck_number}</div> : null}
+                                      </td>
+                                      <td style={td}>{invoiceLabel(d)}</td>
+                                      <td style={td}>{d.customer || "—"}</td>
+                                      <td style={td}>{d.is_warranty ? "Warranty" : "Paid"}</td>
+                                      <td style={td}>
+                                        {d.sale_amount != null && d.sale_amount !== ""
+                                          ? money(d.sale_amount)
+                                          : d.cost != null && d.cost !== ""
+                                          ? `${money(d.cost)} cost`
+                                          : "—"}
+                                      </td>
+                                      <td style={td}>{coreLabel(d.core_status)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
                 <tr>
+                  <td style={{ ...td, borderTop: "2px solid #e2e8f0" }}></td>
                   <td style={{ ...td, fontWeight: 700, borderTop: "2px solid #e2e8f0" }}>TOTAL</td>
                   <td style={{ ...td, fontWeight: 700, borderTop: "2px solid #e2e8f0" }}>{totalUnits}</td>
                   <td style={{ ...td, fontWeight: 700, borderTop: "2px solid #e2e8f0" }}>{totalPaid}</td>

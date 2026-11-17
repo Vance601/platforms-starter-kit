@@ -36,6 +36,8 @@ declare global {
 const F = { QR_CODE: 0, CODE_39: 3, CODE_93: 4, CODE_128: 5, DATA_MATRIX: 6, ITF: 8, EAN_13: 9, EAN_8: 10, PDF_417: 11, UPC_A: 14, UPC_E: 15 };
 // VIN labels: Code 39 (door jamb / windshield), Code 128, Data Matrix, QR.
 const VIN_FORMATS = [F.CODE_39, F.CODE_128, F.DATA_MATRIX, F.QR_CODE];
+// Battery labels: QR is primary, Code 128 is the optional 1D under it.
+const BATTERY_FORMATS = [F.QR_CODE, F.CODE_128];
 
 const CDN =
   "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
@@ -137,7 +139,7 @@ export function BarcodeReader({
     try {
       const inst = new window.Html5Qrcode(regionId, {
         verbose: false,
-        ...(vin ? { formatsToSupport: VIN_FORMATS } : {}),
+        formatsToSupport: vin ? VIN_FORMATS : BATTERY_FORMATS,
         // Native BarcodeDetector (Android Chrome) is much faster and better at
         // long Code 39; falls back to the ZXing decoder elsewhere (iPhone Safari).
         experimentalFeatures: { useBarCodeDetectorIfSupported: true },

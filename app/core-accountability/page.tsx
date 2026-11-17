@@ -4,8 +4,18 @@ import { useState, useEffect, useCallback } from "react";
 
 type OutstandingRow = {
   driver_name: string;
+  truck_number?: string | null;
   model_code: string;
   cores_owed: number;
+};
+
+type OwedCoreRow = {
+  barcode: string;
+  sold_on_call_number: string | null;
+  sold_at: string | null;
+  driver_name: string;
+  truck_number: string | null;
+  model_code: string;
 };
 
 type KeptByDriverRow = {
@@ -34,6 +44,7 @@ type Summary = {
 
 type ReportResponse = {
   outstanding: OutstandingRow[];
+  owedCores?: OwedCoreRow[];
   keptByDriver: KeptByDriverRow[];
   keptByLocation: KeptByLocationRow[];
   summary: Summary;
@@ -495,14 +506,16 @@ export default function CoreAccountabilityPage() {
                 <thead className="bg-gray-50 text-gray-600">
                   <tr>
                     <th className="px-4 py-2 font-medium">Driver</th>
+                    <th className="px-4 py-2 font-medium">Truck</th>
                     <th className="px-4 py-2 font-medium">Model</th>
                     <th className="px-4 py-2 text-right font-medium">Cores owed</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {report.outstanding.map((row, i) => (
-                    <tr key={`${row.driver_name}-${row.model_code}-${i}`}>
+                    <tr key={`${row.driver_name}-${row.truck_number || ""}-${row.model_code}-${i}`}>
                       <td className="px-4 py-2 text-gray-900">{row.driver_name}</td>
+                      <td className="px-4 py-2 text-gray-700">{row.truck_number ? `#${row.truck_number}` : "—"}</td>
                       <td className="px-4 py-2 text-gray-700">{row.model_code}</td>
                       <td className="px-4 py-2 text-right font-semibold text-red-600">{row.cores_owed}</td>
                     </tr>
@@ -511,6 +524,41 @@ export default function CoreAccountabilityPage() {
               </table>
             </div>
           )}
+        </section>
+      )}
+
+      {report && (report.owedCores || []).length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold text-gray-900">Owed cores (all drivers)</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Every pending core in this organization, with the driver and truck that sold it.
+          </p>
+          <div className="mt-4 overflow-x-auto rounded-md border border-gray-200">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-gray-50 text-gray-600">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Battery</th>
+                  <th className="px-4 py-2 font-medium">Call #</th>
+                  <th className="px-4 py-2 font-medium">Sold</th>
+                  <th className="px-4 py-2 font-medium">Driver</th>
+                  <th className="px-4 py-2 font-medium">Truck</th>
+                  <th className="px-4 py-2 font-medium">Model</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(report.owedCores || []).map((row, i) => (
+                  <tr key={`${row.barcode}-${i}`}>
+                    <td className="px-4 py-2 font-mono text-gray-900">{row.barcode}</td>
+                    <td className="px-4 py-2 text-gray-700">{row.sold_on_call_number || "—"}</td>
+                    <td className="px-4 py-2 text-gray-700">{row.sold_at ? String(row.sold_at).slice(0, 10) : "—"}</td>
+                    <td className="px-4 py-2 text-gray-900">{row.driver_name}</td>
+                    <td className="px-4 py-2 text-gray-700">{row.truck_number ? `#${row.truck_number}` : "—"}</td>
+                    <td className="px-4 py-2 text-gray-700">{row.model_code}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
