@@ -2,24 +2,25 @@ import { getOrgSettings } from "@/lib/org-settings";
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
+import { getDriverContext } from "@/lib/driver-session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Verify the session cookie set by auth-driver login.
-function verifySession(token: string | undefined): string | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [driverId, expiryStr, sig] = parts;
-  const secret = process.env.MIGRATE_SECRET || "";
-  const expected = crypto.scryptSync(`${driverId}.${expiryStr}`, secret, 32).toString("hex");
-  if (sig !== expected) return null;
-  if (Date.now() > Number(expiryStr)) return null;
-  return driverId;
+// A driver may see and resolve a core if they made the sale, or if they
+// currently have the sale's truck claimed. Attribution comes from the
+// latest on_truck -> sold movement (driver_id + from_truck_id).
+function ownedByDriver(
+  saleDriverId: string | null,
+  saleTruckId: string | null,
+  driverId: string,
+  claimedTruckId: string | null,
+) {
+  if (saleDriverId && saleDriverId === driverId) return true;
+  if (claimedTruckId && saleTruckId && saleTruckId === claimedTruckId) return true;
+  return false;
 }
 
-// ---- GET: list this driver's company's OWED cores (from the core_returns ledger) ----
 export async function GET(req: NextRequest) {
   try {
     return await getCores(req);
@@ -32,27 +33,21 @@ export async function GET(req: NextRequest) {
 }
 
 async function getCores(req: NextRequest) {
-  const token = req.cookies.get("driver_session")?.value;
-  const driverId = verifySession(token);
-  if (!driverId) {
+  const ctx = await getDriverContext(req);
+  if (!ctx) {
     return NextResponse.json(
       { success: false, error: "Not signed in. Please log in again." },
       { status: 401 }
     );
   }
+  const { driverId, companyId, truckId: claimedTruckId } = ctx;
 
-  const driverRow = await sql`
-    SELECT company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1
-  `;
-  if (driverRow.rows.length === 0) {
-    return NextResponse.json(
-      { success: false, error: "Driver not found" },
-      { status: 404 }
-    );
-  }
-  const companyId = driverRow.rows[0].company_id;
+  const { rows: truckRows } = claimedTruckId
+    ? await sql`SELECT id, truck_number FROM trucks WHERE id = ${claimedTruckId} LIMIT 1`
+    : { rows: [] as { id: string; truck_number: string }[] };
+  const claimedTruck = truckRows[0] || null;
 
-  // Owed cores for this company, joined to the battery for barcode/call display.
+  // Owed cores for this company, attributed via the sale movement.
   const cores = await sql`
     SELECT
       cr.id            AS core_id,
@@ -61,27 +56,45 @@ async function getCores(req: NextRequest) {
       b.barcode        AS barcode,
       b.serial_number  AS serial_number,
       b.sold_on_call_number AS sold_on_call_number,
-      b.sold_at        AS sold_at
+      b.sold_at        AS sold_at,
+      sm.driver_id     AS sale_driver_id,
+      sm.from_truck_id AS sale_truck_id,
+      d.name           AS sale_driver_name,
+      t.truck_number   AS sale_truck_number
     FROM core_returns cr
     JOIN batteries b ON b.id = cr.battery_id
+    LEFT JOIN LATERAL (
+      SELECT m.driver_id, m.from_truck_id
+      FROM battery_movements m
+      WHERE m.battery_id = cr.battery_id AND m.to_status = 'sold'
+      ORDER BY m.occurred_at DESC
+      LIMIT 1
+    ) sm ON true
+    LEFT JOIN drivers d ON d.id = sm.driver_id
+    LEFT JOIN trucks t ON t.id = sm.from_truck_id
     WHERE cr.company_id = ${companyId}
       AND cr.status = 'owed'
     ORDER BY b.sold_at DESC NULLS LAST
   `;
 
-  const orgRow = await sql`SELECT org_id FROM companies WHERE id = ${companyId} LIMIT 1;`;
-  const { coreCharge } = await getOrgSettings(orgRow.rows[0]?.org_id ?? null);
-  return NextResponse.json({ success: true, cores: cores.rows, defaultCoreCharge: coreCharge });
+  const visible = cores.rows.filter((row) =>
+    ownedByDriver(row.sale_driver_id, row.sale_truck_id, driverId, claimedTruckId)
+  );
+
+  const { coreCharge } = await getOrgSettings(ctx.orgId);
+  return NextResponse.json({
+    success: true,
+    cores: visible,
+    claimedTruck,
+    defaultCoreCharge: coreCharge,
+  });
 }
 
 // ---- POST: resolve one owed core ----
 // body: { coreId, decision: "returned" | "kept", chargeAmount? }
-//  - "returned" -> core came back to MBS; battery status -> returned_core
-//  - "kept"     -> customer kept it; record charge; battery stays 'sold'
 export async function POST(req: NextRequest) {
-  const token = req.cookies.get("driver_session")?.value;
-  const driverId = verifySession(token);
-  if (!driverId) {
+  const ctx = await getDriverContext(req);
+  if (!ctx) {
     return NextResponse.json(
       { success: false, error: "Not signed in. Please log in again." },
       { status: 401 }
@@ -113,7 +126,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Charge is required for 'kept' - no silent default amount.
   let charge = 0;
   if (decision === "kept") {
     const raw = body.chargeAmount;
@@ -127,23 +139,22 @@ export async function POST(req: NextRequest) {
     charge = parsed;
   }
 
-  const driverRow = await sql`
-    SELECT id, name, company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1
-  `;
-  if (driverRow.rows.length === 0) {
-    return NextResponse.json(
-      { success: false, error: "Driver not found" },
-      { status: 404 }
-    );
-  }
-  const driver = driverRow.rows[0];
-  const companyId = driver.company_id;
+  const { driverId, name: driverName, companyId, truckId: claimedTruckId } = ctx;
 
-  // Fetch the core record, scoped to this company, must still be 'owed'.
   const coreRow = await sql`
-    SELECT id, battery_id, status, company_id
-    FROM core_returns
-    WHERE id = ${coreId} AND company_id = ${companyId}
+    SELECT
+      cr.id, cr.battery_id, cr.status, cr.company_id,
+      sm.driver_id AS sale_driver_id,
+      sm.from_truck_id AS sale_truck_id
+    FROM core_returns cr
+    LEFT JOIN LATERAL (
+      SELECT m.driver_id, m.from_truck_id
+      FROM battery_movements m
+      WHERE m.battery_id = cr.battery_id AND m.to_status = 'sold'
+      ORDER BY m.occurred_at DESC
+      LIMIT 1
+    ) sm ON true
+    WHERE cr.id = ${coreId} AND cr.company_id = ${companyId}
     LIMIT 1
   `;
   if (coreRow.rows.length === 0) {
@@ -159,10 +170,15 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
   }
+  if (!ownedByDriver(core.sale_driver_id, core.sale_truck_id, driverId, claimedTruckId)) {
+    return NextResponse.json(
+      { success: false, error: "That core belongs to another driver or truck." },
+      { status: 403 }
+    );
+  }
 
   const batteryId = core.battery_id;
 
-  // Pull battery for movement logging (truck/call context).
   const batteryRow = await sql`
     SELECT id, status, current_truck_id, sold_on_call_number
     FROM batteries
@@ -172,13 +188,11 @@ export async function POST(req: NextRequest) {
   const battery = batteryRow.rows[0] || null;
 
   if (decision === "returned") {
-    // Core came back to MBS. Mark the ledger row returned, and flip the battery
-    // to returned_core (same as the old flow did).
     await sql`
       UPDATE core_returns
       SET status = 'returned',
           returned_at = NOW(),
-          notes = COALESCE(notes, '') || ${` | Returned to supplier by ${driver.name}`}
+          notes = COALESCE(notes, '') || ${` | Returned to supplier by ${driverName}`}
       WHERE id = ${coreId} AND company_id = ${companyId}
     `;
 
@@ -202,15 +216,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, coreId, status: "returned" });
   }
 
-  // decision === "kept": customer kept the old battery -> charge recorded.
-  // Battery stays 'sold' (no core comes back). Charge stored in deposit_amount,
-  // for billing records only (does not feed revenue).
   await sql`
     UPDATE core_returns
     SET status = 'customer_kept',
         deposit_amount = ${charge},
         returned_at = NOW(),
-        notes = COALESCE(notes, '') || ${` | Customer kept core — charge $${charge.toFixed(2)} (recorded by ${driver.name})`}
+        notes = COALESCE(notes, '') || ${` | Customer kept core — charge $${charge.toFixed(2)} (recorded by ${driverName})`}
     WHERE id = ${coreId} AND company_id = ${companyId}
   `;
 
