@@ -2,7 +2,7 @@
 // the demo. Additive only: inserts new rows, never touches existing orgs.
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
-import { ensureOrgSettingsTable, type OrgSettings } from "@/lib/org-settings";
+import { DEFAULT_ORG_SETTINGS, ensureOrgSettingsTable, type OrgSettings } from "@/lib/org-settings";
 import { applyBatteryCatalogUpdates } from "@/lib/battery-catalog";
 
 export function slugify(input: string): string {
@@ -59,7 +59,7 @@ export type ProvisionInput = {
   locationName: string;
   city?: string | null;
   state?: string | null;
-  settings?: OrgSettings | null; // written to org_settings when given
+  settings?: Partial<OrgSettings> | null; // written to org_settings when given
   demoDays?: number; // marks the org is_demo with an expiry
 };
 
@@ -106,10 +106,16 @@ export async function provisionOrg(input: ProvisionInput): Promise<Provisioned> 
 
   if (input.settings) {
     await ensureOrgSettingsTable();
-    const s = input.settings;
+    const s = { ...DEFAULT_ORG_SETTINGS, ...input.settings };
     await sql`
-      INSERT INTO org_settings (org_id, barcode_prefix, timezone, core_charge, updated_at)
-      VALUES (${orgId}, ${s.barcodePrefix}, ${s.timezone}, ${s.coreCharge}, now())
+      INSERT INTO org_settings (
+        org_id, barcode_prefix, timezone, core_charge,
+        label_offset_x_in, label_offset_y_in, updated_at
+      )
+      VALUES (
+        ${orgId}, ${s.barcodePrefix}, ${s.timezone}, ${s.coreCharge},
+        ${s.labelOffsetXIn}, ${s.labelOffsetYIn}, now()
+      )
       ON CONFLICT (org_id) DO NOTHING;
     `;
   }

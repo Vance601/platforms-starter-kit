@@ -6,12 +6,16 @@ import {
   LABEL_SIZES,
   type LabelItem,
   type LabelDpi,
+  type LabelOffset,
   type LabelSizeId,
+  applyLabelOffset,
   formatLabelDate,
   labelContentBounds,
+  labelOffsetDots,
   labelPrintCss,
   labelSvg,
   labelsToZpl,
+  layoutLabel,
   rasterLabel,
   rasterToPbm,
 } from "../lib/label-print";
@@ -31,12 +35,12 @@ function safeName(barcode: string, dpi: number, size: string) {
   return `${barcode.replace(/[^A-Za-z0-9_-]+/g, "_")}-${size}-${dpi}dpi`;
 }
 
-function writeBundle(item: LabelItem, dpi: LabelDpi, size: LabelSizeId = sizeId) {
-  const { width, height, mono, layout } = rasterLabel(item, size, dpi);
+function writeBundle(item: LabelItem, dpi: LabelDpi, size: LabelSizeId = sizeId, offset: LabelOffset = { xIn: 0, yIn: 0 }) {
+  const { width, height, mono, layout } = rasterLabel(item, size, dpi, offset);
   const safe = safeName(item.barcode, dpi, size);
   const pbmPath = `${outDir}/${safe}.pbm`;
   writeFileSync(pbmPath, rasterToPbm(width, height, mono));
-  const { svg } = labelSvg(item, size, dpi);
+  const { svg } = labelSvg(item, size, dpi, offset);
   writeFileSync(`${outDir}/${safe}.svg`, svg);
   const dim = LABEL_SIZES[size];
   const bounds = {
@@ -91,10 +95,10 @@ const css = `
   ${labelPrintCss(dim)}
 `;
 
-function printHtml(items: LabelItem[], dpi: LabelDpi) {
+function printHtml(items: LabelItem[], dpi: LabelDpi, offset: LabelOffset = { xIn: 0, yIn: 0 }) {
   const labels = items
     .map((item) => {
-      const { svg } = labelSvg(item, sizeId, dpi);
+      const { svg } = labelSvg(item, sizeId, dpi, offset);
       return `<div class="label" style="width:${dim.wIn}in;height:${dim.hIn}in"><div class="label-art" style="width:${dim.wIn}in;height:${dim.hIn}in">${svg}</div></div>`;
     })
     .join("\n");
@@ -121,9 +125,14 @@ writeFileSync(`${outDir}/print-1-label-203dpi.html`, printHtml([chris], 203));
 console.log("html", `${outDir}/print-1-label-300dpi.html`, `${outDir}/print-3-labels-300dpi.html`);
 console.log("defaultDpi", DEFAULT_LABEL_DPI, "defaultSize", DEFAULT_LABEL_SIZE);
 
+const DUGGERS_OFFSET: LabelOffset = { xIn: 0.28, yIn: 0.4 };
+writeFileSync(`${outDir}/print-1-label-300dpi-offset.html`, printHtml([chris], 300, DUGGERS_OFFSET));
+writeFileSync(`${outDir}/sample-300dpi-offset.zpl`, labelsToZpl([chris], sizeId, 1, 300, DUGGERS_OFFSET));
+writeBundle(chris, 300, sizeId, DUGGERS_OFFSET);
+
 const zpl300 = labelsToZpl([chris], sizeId, 1, 300);
 const { layout: chrisLayout } = labelSvg(chris, sizeId, 300);
-const fos = [...zpl300.matchAll(/\^FO(\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+const fos = [...zpl300.matchAll(/\^FO(-?\d+),(-?\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
 const expected = [
   { x: chrisLayout.qr.x, y: chrisLayout.qr.y },
   ...chrisLayout.lines.map((l) => ({ x: l.x, y: l.y })),
@@ -146,5 +155,37 @@ console.log(
       dx: (bounds.cx - chrisLayout.W / 2) / chrisLayout.dpi,
       dy: (bounds.cy - chrisLayout.H / 2) / chrisLayout.dpi,
     },
+  }),
+);
+
+const baseLayout = layoutLabel(chris, sizeId, 300);
+const shiftedLayout = applyLabelOffset(baseLayout, DUGGERS_OFFSET);
+const dots = labelOffsetDots(DUGGERS_OFFSET, 300);
+const zplOffset = labelsToZpl([chris], sizeId, 1, 300, DUGGERS_OFFSET);
+const fosOffset = [...zplOffset.matchAll(/\^FO(-?\d+),(-?\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+const expectedOffset = [
+  { x: shiftedLayout.qr.x, y: shiftedLayout.qr.y },
+  ...shiftedLayout.lines.map((l) => ({ x: l.x, y: l.y })),
+];
+if (shiftedLayout.code128) expectedOffset.push({ x: shiftedLayout.code128.x, y: shiftedLayout.code128.y });
+const foOffsetMatch =
+  fosOffset.length === expectedOffset.length &&
+  fosOffset.every((f, i) => f.x === expectedOffset[i].x && f.y === expectedOffset[i].y);
+const dxQr = shiftedLayout.qr.x - baseLayout.qr.x;
+const dyQr = shiftedLayout.qr.y - baseLayout.qr.y;
+const linesMoved = baseLayout.lines.every((l, i) => shiftedLayout.lines[i].x - l.x === dots.dx && shiftedLayout.lines[i].y - l.y === dots.dy);
+console.log(
+  JSON.stringify({
+    offset: DUGGERS_OFFSET,
+    offsetDots: dots,
+    expectedDots: { dx: 84, dy: -120 },
+    dotsMatch: dots.dx === 84 && dots.dy === -120,
+    qrDelta: { dx: dxQr, dy: dyQr },
+    linesMoved,
+    zplOffsetOriginsMatch: foOffsetMatch,
+    fosOffset,
+    expectedOffset,
+    qrSizeIn: shiftedLayout.qr.size / 300,
+    idLines: shiftedLayout.lines.map((l) => l.text),
   }),
 );

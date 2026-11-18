@@ -3,11 +3,19 @@
 // pages render immediately and look exactly as before for the Duggers org.
 import { useEffect, useState } from "react";
 
-export type ClientOrgSettings = { barcodePrefix: string; timezone: string; coreCharge: number };
+export type ClientOrgSettings = {
+  barcodePrefix: string;
+  timezone: string;
+  coreCharge: number;
+  labelOffsetXIn: number;
+  labelOffsetYIn: number;
+};
 export const CLIENT_DEFAULT_SETTINGS: ClientOrgSettings = {
   barcodePrefix: "DG",
   timezone: "America/Phoenix",
   coreCharge: 25,
+  labelOffsetXIn: 0,
+  labelOffsetYIn: 0,
 };
 
 export function useOrgSettings(): ClientOrgSettings {

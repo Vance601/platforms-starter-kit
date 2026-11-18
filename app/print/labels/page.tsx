@@ -4,23 +4,39 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   DEFAULT_LABEL_DPI,
+  DEFAULT_LABEL_OFFSET,
   DEFAULT_LABEL_SIZE,
   DEMO_LABELS,
   LABEL_DPI_STORAGE_KEY,
+  LABEL_OFFSET_STEP_IN,
+  LABEL_OFFSET_STORAGE_KEY,
   LABEL_SIZE_STORAGE_KEY,
   LABEL_SIZES,
   type LabelDpi,
   type LabelItem,
+  type LabelOffset,
   type LabelSizeId,
   PRINT_LABELS_SESSION_KEY,
   type PrintLabelsPayload,
+  calibrationLabelSvg,
+  calibrationLabelZpl,
+  clampOffsetInches,
   labelDots,
   labelPrintCss,
   labelSvg,
   labelsToZpl,
   parseLabelDpi,
+  parseLabelOffset,
   parseLabelSize,
 } from "@/lib/label-print";
+
+function describeOffset(offset: LabelOffset) {
+  const x =
+    offset.xIn === 0 ? "0.00 in left/right" : `${Math.abs(offset.xIn).toFixed(2)} in ${offset.xIn > 0 ? "right" : "left"}`;
+  const y =
+    offset.yIn === 0 ? "0.00 in up/down" : `${Math.abs(offset.yIn).toFixed(2)} in ${offset.yIn > 0 ? "up" : "down"}`;
+  return `${x}, ${y}`;
+}
 
 function PrintBatteryLabelsInner() {
   const params = useSearchParams();
@@ -34,6 +50,12 @@ function PrintBatteryLabelsInner() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const isDemo = params.get("demo") === "1" || params.get("preview") === "1";
+  const [offset, setOffset] = useState<LabelOffset>(DEFAULT_LABEL_OFFSET);
+  const [orgOffset, setOrgOffset] = useState<LabelOffset>(DEFAULT_LABEL_OFFSET);
+  const [usingLocalOffset, setUsingLocalOffset] = useState(false);
+  const [offsetStatus, setOffsetStatus] = useState("");
+  const [offsetBusy, setOffsetBusy] = useState(false);
+  const [printCalibration, setPrintCalibration] = useState(false);
 
   useEffect(() => {
     try {
@@ -49,6 +71,42 @@ function PrintBatteryLabelsInner() {
       // ignore missing localStorage
     }
   }, [params]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let localOverride: LabelOffset | null = null;
+    try {
+      const raw = localStorage.getItem(LABEL_OFFSET_STORAGE_KEY);
+      if (raw) {
+        const parsed = parseLabelOffset(JSON.parse(raw));
+        localOverride = parsed;
+        setOffset(parsed);
+        setUsingLocalOffset(true);
+      }
+    } catch {
+      localOverride = null;
+    }
+
+    fetch("/api/org-settings", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.success || !d.settings) return;
+        const next = parseLabelOffset({
+          xIn: d.settings.labelOffsetXIn,
+          yIn: d.settings.labelOffsetYIn,
+        });
+        setOrgOffset(next);
+        if (!localOverride) {
+          setOffset(next);
+          setUsingLocalOffset(false);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +179,15 @@ function PrintBatteryLabelsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  useEffect(() => {
+    if (!printCalibration) return;
+    const t = window.setTimeout(() => {
+      window.print();
+      setPrintCalibration(false);
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [printCalibration]);
+
   const sheet = useMemo(() => {
     const n = Math.max(1, Math.min(99, copies));
     return labels.flatMap((l) => Array.from({ length: n }, (_, i) => ({ ...l, key: `${l.id}-${i}` })));
@@ -128,6 +195,68 @@ function PrintBatteryLabelsInner() {
 
   const dim = LABEL_SIZES[size];
   const dots = labelDots(dim, dpi);
+
+  function changeOffset(next: LabelOffset) {
+    setOffset(parseLabelOffset(next));
+    setOffsetStatus("");
+  }
+
+  function nudge(axis: "xIn" | "yIn", delta: number) {
+    changeOffset({ ...offset, [axis]: clampOffsetInches(offset[axis] + delta) });
+  }
+
+  function saveLocalOffset() {
+    try {
+      localStorage.setItem(LABEL_OFFSET_STORAGE_KEY, JSON.stringify(offset));
+      setUsingLocalOffset(true);
+      setOffsetStatus("Saved on this computer only. Other devices will still use the org setting.");
+    } catch {
+      setOffsetStatus("Could not save on this computer.");
+    }
+  }
+
+  function resetToOrgOffset() {
+    try {
+      localStorage.removeItem(LABEL_OFFSET_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setUsingLocalOffset(false);
+    setOffset(orgOffset);
+    setOffsetStatus("Using the org print position.");
+  }
+
+  async function saveOrgOffset() {
+    setOffsetBusy(true);
+    setOffsetStatus("");
+    try {
+      const r = await fetch("/api/org-settings/label-offset", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ xIn: offset.xIn, yIn: offset.yIn }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.success) {
+        throw new Error(d.error || (r.status === 401 ? "Sign in to save for everyone." : "Could not save the org print position."));
+      }
+      const saved = parseLabelOffset({
+        xIn: d.settings?.labelOffsetXIn ?? offset.xIn,
+        yIn: d.settings?.labelOffsetYIn ?? offset.yIn,
+      });
+      setOrgOffset(saved);
+      setOffset(saved);
+      try {
+        localStorage.removeItem(LABEL_OFFSET_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      setUsingLocalOffset(false);
+      setOffsetStatus("Saved for everyone in this organization.");
+    } catch (e) {
+      setOffsetStatus(e instanceof Error ? e.message : "Could not save the org print position.");
+    }
+    setOffsetBusy(false);
+  }
 
   function changeDpi(next: LabelDpi) {
     setDpi(next);
@@ -148,11 +277,21 @@ function PrintBatteryLabelsInner() {
   }
 
   function downloadZpl() {
-    const zpl = labelsToZpl(labels, size, copies, dpi);
+    const zpl = labelsToZpl(labels, size, copies, dpi, offset);
     const blob = new Blob([zpl], { type: "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `battery-labels-${labels.length}x${copies}-${size}-${dpi}dpi.zpl`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function downloadCalibrationZpl() {
+    const zpl = calibrationLabelZpl(size, 1, dpi, offset);
+    const blob = new Blob([zpl], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `calibration-label-${size}-${dpi}dpi.zpl`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -236,6 +375,76 @@ function PrintBatteryLabelsInner() {
           </button>
         </div>
 
+        <div className="offset-panel">
+          <strong>Print position</strong>
+          <p>
+            If the artwork prints too low or too far left, move it here. The same offset is applied to the preview,
+            browser print, and Download ZPL. Owners and managers can save it once for the whole organization.
+          </p>
+          <div className="offset-grid">
+            <div className="nudge" role="group" aria-label="Move print position">
+              <button type="button" className="nudge-up" onClick={() => nudge("yIn", LABEL_OFFSET_STEP_IN)} title="Move up 0.01 in">
+                Move up
+              </button>
+              <button type="button" className="nudge-left" onClick={() => nudge("xIn", -LABEL_OFFSET_STEP_IN)} title="Move left 0.01 in">
+                Move left
+              </button>
+              <button type="button" className="nudge-right" onClick={() => nudge("xIn", LABEL_OFFSET_STEP_IN)} title="Move right 0.01 in">
+                Move right
+              </button>
+              <button type="button" className="nudge-down" onClick={() => nudge("yIn", -LABEL_OFFSET_STEP_IN)} title="Move down 0.01 in">
+                Move down
+              </button>
+            </div>
+            <div className="offset-fields">
+              <label>
+                Left / right (inches, + is right)
+                <input
+                  type="number"
+                  step={0.01}
+                  min={-1}
+                  max={1}
+                  value={offset.xIn.toFixed(2)}
+                  onChange={(e) => changeOffset({ ...offset, xIn: Number(e.target.value) })}
+                />
+              </label>
+              <label>
+                Up / down (inches, + is up)
+                <input
+                  type="number"
+                  step={0.01}
+                  min={-1}
+                  max={1}
+                  value={offset.yIn.toFixed(2)}
+                  onChange={(e) => changeOffset({ ...offset, yIn: Number(e.target.value) })}
+                />
+              </label>
+              <p className="offset-readout">
+                Current: {describeOffset(offset)}
+                {usingLocalOffset ? " · this computer only" : " · org setting"}
+              </p>
+            </div>
+          </div>
+          <div className="row offset-actions">
+            <button type="button" className="primary" disabled={offsetBusy} onClick={saveOrgOffset}>
+              Save for everyone
+            </button>
+            <button type="button" onClick={saveLocalOffset}>
+              This computer only
+            </button>
+            <button type="button" onClick={resetToOrgOffset}>
+              Reset to org default
+            </button>
+            <button type="button" onClick={() => setPrintCalibration(true)}>
+              Print calibration label
+            </button>
+            <button type="button" onClick={downloadCalibrationZpl}>
+              Download calibration ZPL
+            </button>
+          </div>
+          {offsetStatus ? <p className="offset-status">{offsetStatus}</p> : null}
+        </div>
+
         <div className="howto open-howto">
           <strong>Recommended: send ZPL straight to the printer.</strong>
           <p>
@@ -288,11 +497,11 @@ function PrintBatteryLabelsInner() {
               Starting print quality: darkness around <strong>10–12</strong>, speed <strong>4 ips</strong>.
             </li>
             <li>
-              If a label prints low, high, or off to one side, the layout itself is centered — the printer&apos;s
-              home position is drifting. Push the 3&quot; roll all the way against the <strong>left media guide</strong>,
-              then run a media calibration (Menu → Tools → Media / Sensor Calibration). In the driver or printer
-              menu set <strong>Label Top</strong> (and Tear-Off) to <strong>0</strong> and Horizontal / Left
-              Position to <strong>0</strong>, then reprint.
+              If a label still prints low, high, or off to one side, use the <strong>Print position</strong> controls
+              above — Move up / down / left / right, or type the inches — then click <strong>Save for everyone</strong>.
+              <strong> Print calibration label</strong> (or Download calibration ZPL) prints a border box and a center
+              crosshair so you can see the remaining shift. You do not need to change Label Top or Left Position on
+              the printer.
             </li>
           </ol>
         </div>
@@ -300,28 +509,39 @@ function PrintBatteryLabelsInner() {
 
       <div className="sheet" data-size={size} data-dpi={dpi}>
         <p className="no-print preview-caption">
-          Actual-size preview for {dim.wIn}&quot; × {dim.hIn}&quot; stock at {dpi} dpi. The dashed box is one label;
-          print uses the same layout with no margin, and each label is exactly one page.
+          Actual-size preview for {dim.wIn}&quot; × {dim.hIn}&quot; stock at {dpi} dpi
+          {offset.xIn || offset.yIn ? `, offset ${describeOffset(offset)}` : ""}. The dashed box is one label; print
+          uses the same layout with no margin, and each label is exactly one page.
         </p>
-        {sheet.map((l) => {
-          const { svg } = labelSvg(l, size, dpi);
-          return (
+        {printCalibration ? (
+          <div className="label" style={{ width: `${dim.wIn}in`, height: `${dim.hIn}in` }}>
             <div
-              key={l.key}
-              className="label"
-              style={{
-                width: `${dim.wIn}in`,
-                height: `${dim.hIn}in`,
-              }}
-            >
+              className="label-art"
+              style={{ width: `${dim.wIn}in`, height: `${dim.hIn}in` }}
+              dangerouslySetInnerHTML={{ __html: calibrationLabelSvg(size, dpi, offset) }}
+            />
+          </div>
+        ) : (
+          sheet.map((l) => {
+            const { svg } = labelSvg(l, size, dpi, offset);
+            return (
               <div
-                className="label-art"
-                style={{ width: `${dim.wIn}in`, height: `${dim.hIn}in` }}
-                dangerouslySetInnerHTML={{ __html: svg }}
-              />
-            </div>
-          );
-        })}
+                key={l.key}
+                className="label"
+                style={{
+                  width: `${dim.wIn}in`,
+                  height: `${dim.hIn}in`,
+                }}
+              >
+                <div
+                  className="label-art"
+                  style={{ width: `${dim.wIn}in`, height: `${dim.hIn}in` }}
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            );
+          })
+        )}
       </div>
 
       <style jsx global>{`
@@ -344,12 +564,23 @@ function PrintBatteryLabelsInner() {
         .size-card.selected { border-color: #2563eb; background: #eff6ff; color: #1e3a8a; box-shadow: 0 0 0 2px #bfdbfe; }
         .size-thumb { display: block; border: 1px solid #64748b; background: #fff; box-sizing: border-box; }
         .size-name { text-align: center; line-height: 1.25; }
+        .offset-panel { margin-top: 16px; font-size: 13px; color: #334155; background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; padding: 14px 16px; }
+        .offset-panel p { margin: 8px 0 10px; color: #9a3412; }
+        .offset-grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+        .nudge { display: grid; grid-template-columns: auto auto auto; grid-template-areas: ". up ." "left . right" ". down ."; gap: 6px; justify-items: center; }
+        .nudge-up { grid-area: up; }
+        .nudge-left { grid-area: left; }
+        .nudge-right { grid-area: right; }
+        .nudge-down { grid-area: down; }
+        .offset-fields { display: flex; flex-direction: column; gap: 8px; min-width: 240px; }
+        .offset-readout, .offset-status { margin: 4px 0 0; font-size: 13px; color: #9a3412; }
+        .offset-actions { margin-top: 8px; }
         .howto { margin-top: 16px; font-size: 13px; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
         .howto p { margin: 8px 0 10px; color: #334155; }
         .howto ol { margin: 8px 0 12px; padding-left: 20px; }
         .howto li { margin: 6px 0; }
         .howto code { font-size: 12px; }
-        .preview-caption { font-family: system-ui, sans-serif; font-size: 13px; color: #475569; width: 100%; margin: 0 0 8px; }
+        .preview-caption { font-family: system-ui, sans-serif; font-size: 13px; width: 100%; margin: 0 0 8px; color: #475569; }
         .sheet { padding: 16px 24px 32px; display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
         .label {
           box-sizing: border-box;
@@ -365,6 +596,7 @@ function PrintBatteryLabelsInner() {
           height: 100%;
           max-width: 100%;
           max-height: 100%;
+          overflow: hidden;
           image-rendering: pixelated;
           image-rendering: crisp-edges;
           shape-rendering: crispEdges;
