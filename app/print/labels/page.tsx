@@ -3,16 +3,21 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  DEFAULT_LABEL_DPI,
   DEFAULT_LABEL_SIZE,
   DEMO_LABELS,
-  LABEL_DPI,
+  LABEL_DPI_STORAGE_KEY,
   LABEL_SIZES,
+  type LabelDpi,
   type LabelItem,
   type LabelSizeId,
   PRINT_LABELS_SESSION_KEY,
   type PrintLabelsPayload,
+  labelDots,
+  labelPrintCss,
   labelSvg,
   labelsToZpl,
+  parseLabelDpi,
   parseLabelSize,
 } from "@/lib/label-print";
 
@@ -24,9 +29,20 @@ function PrintBatteryLabelsInner() {
     const n = Number(params.get("copies") || 1);
     return Number.isFinite(n) && n >= 1 && n <= 99 ? Math.floor(n) : 1;
   });
+  const [dpi, setDpi] = useState<LabelDpi>(() => parseLabelDpi(params.get("dpi")) || DEFAULT_LABEL_DPI);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const isDemo = params.get("demo") === "1" || params.get("preview") === "1";
+
+  useEffect(() => {
+    if (params.get("dpi")) return;
+    try {
+      const saved = localStorage.getItem(LABEL_DPI_STORAGE_KEY);
+      if (saved) setDpi(parseLabelDpi(saved));
+    } catch {
+      // ignore missing localStorage
+    }
+  }, [params]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,13 +120,23 @@ function PrintBatteryLabelsInner() {
   }, [labels, copies]);
 
   const dim = LABEL_SIZES[size];
+  const dots = labelDots(dim, dpi);
+
+  function changeDpi(next: LabelDpi) {
+    setDpi(next);
+    try {
+      localStorage.setItem(LABEL_DPI_STORAGE_KEY, String(next));
+    } catch {
+      // ignore
+    }
+  }
 
   function downloadZpl() {
-    const zpl = labelsToZpl(labels, size, copies);
+    const zpl = labelsToZpl(labels, size, copies, dpi);
     const blob = new Blob([zpl], { type: "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `battery-labels-${labels.length}x${copies}-${size}.zpl`;
+    a.download = `battery-labels-${labels.length}x${copies}-${size}-${dpi}dpi.zpl`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -121,9 +147,9 @@ function PrintBatteryLabelsInner() {
         <div>
           <h1>Print battery labels</h1>
           <p>
-            One label per barcode, with a large QR code (the reliable scan target) and a Code 128 underneath when it fits. Default is{" "}
-            <strong>4&quot; × 3&quot; die-cut</strong> for the Zebra ZD421. Pick a different size
-            below if the roll is not 4×3.
+            One label per barcode, with a large QR code (the reliable scan target) and a Code 128 underneath when it
+            fits. Default stock is <strong>4&quot; × 3&quot; die-cut</strong> for the Zebra ZD421. The Duggers printer
+            is the <strong>300 dpi</strong> model; pick 203 only if the printer name says 203 dpi.
           </p>
         </div>
         {isDemo ? (
@@ -137,7 +163,7 @@ function PrintBatteryLabelsInner() {
           <p className="meta">
             {labels.length} unique barcode{labels.length === 1 ? "" : "s"}
             {copies > 1 ? ` × ${copies} copies = ${sheet.length} labels` : ""}
-            {` · ${dim.wIn} × ${dim.hIn} in`}
+            {` · ${dim.wIn} × ${dim.hIn} in · ${dpi} dpi (${dots.W} × ${dots.H} dots)`}
           </p>
         ) : null}
 
@@ -178,77 +204,98 @@ function PrintBatteryLabelsInner() {
               onChange={(e) => setCopies(Math.max(1, Math.min(99, Number(e.target.value) || 1)))}
             />
           </label>
-          <button type="button" className="primary" disabled={!sheet.length} onClick={() => window.print()}>
-            Print {sheet.length || ""} label{sheet.length === 1 ? "" : "s"}
+          <label>
+            Printer resolution
+            <select value={dpi} onChange={(e) => changeDpi(parseLabelDpi(e.target.value))}>
+              <option value={300}>300 dpi (ZD421-300dpi, Duggers)</option>
+              <option value={203}>203 dpi (ZD421-203dpi)</option>
+            </select>
+          </label>
+          <button type="button" className="primary" disabled={!labels.length} onClick={downloadZpl}>
+            Download ZPL (recommended)
           </button>
-          <button type="button" disabled={!labels.length} onClick={downloadZpl}>
-            Download ZPL
+          <button type="button" disabled={!sheet.length} onClick={() => window.print()}>
+            Print {sheet.length || ""} label{sheet.length === 1 ? "" : "s"} from browser
           </button>
         </div>
 
-        <details className="howto">
-          <summary>Chris&apos;s ZD421 print and calibration settings</summary>
+        <div className="howto open-howto">
+          <strong>Recommended: send ZPL straight to the printer.</strong>
+          <p>
+            Browser print has to go through Chrome and the Windows driver, which is what printed one label across four
+            stickers last time. The ZPL file already sets the exact size (
+            <code>
+              ^PW{dots.W} ^LL{dots.H}
+            </code>{" "}
+            for {dim.wIn}&quot; × {dim.hIn}&quot; at {dpi} dpi), the gap sensor, the QR, and the barcode. Use{" "}
+            <strong>Download ZPL</strong>, then:
+          </p>
+          <ol>
+            <li>Open <strong>Zebra Setup Utilities</strong> → select the ZD421 → <strong>Open Communication With Printer</strong>.</li>
+            <li>Click <strong>Open file</strong>, pick the downloaded <code>.zpl</code>, then <strong>Send to printer</strong>.</li>
+            <li>
+              Or from Command Prompt:{" "}
+              <code>copy /b battery-labels.zpl &quot;\\%COMPUTERNAME%\ZDesigner ZD421-300dpi&quot;</code> (the printer
+              must be shared under that name).
+            </li>
+          </ol>
+          <p>
+            Zebra Browser Print can also send ZPL from the browser, but battery-city.com is HTTPS and Browser Print is
+            a local service, so certificates get in the way. Downloading the file is more reliable; we did not add a
+            Send button for that reason.
+          </p>
+          <strong>If you do print from Chrome, set the driver stock first — do not use “Custom.”</strong>
           <ol>
             <li>
-              Load the 4&quot; × 3&quot; die-cut roll so the labels feed in the 3&quot; direction
-              (4&quot; across the print head).
+              Load the 4&quot; × 3&quot; die-cut roll so the labels feed in the 3&quot; direction (4&quot; across the
+              print head — the ZD421&apos;s maximum width).
+            </li>
+            <li>
+              In Windows: right-click <strong>ZDesigner ZD421-300dpi</strong> → <strong>Printing Preferences</strong> →{" "}
+              <strong>Page Setup</strong> → <strong>Stock: New</strong> → name it <strong>4x3</strong>, size{" "}
+              <strong>4.00 × 3.00 in</strong>, orientation <strong>Portrait</strong>. Save. Pick that stock (not
+              Custom). Media type: Labels with Gaps. Unprintable margins: 0. Do not use “fit to page.”
             </li>
             <li>
               On the printer menu: <strong>Media Type = Gap / Web</strong> (not Continuous),{" "}
               <strong>Print Method = Direct Thermal</strong> if there is no ribbon,{" "}
-              <strong>Print Width = 4.00 in</strong> (104 mm, or 812 dots at 203 dpi),{" "}
-              <strong>Label Length = 3.00 in</strong> (76 mm, or 609 dots).
+              <strong>Print Width = 4.00 in</strong> (1200 dots at 300 dpi, or 812 dots at 203 dpi),{" "}
+              <strong>Label Length = 3.00 in</strong> (900 dots at 300 dpi, or 609 dots at 203 dpi). Run a media
+              calibration (Menu → Tools → Media / Sensor Calibration) after changing stock.
             </li>
             <li>
-              Run a media calibration: Menu → Tools → <strong>Media / Sensor Calibration</strong>{" "}
-              (or hold Pause until it flashes, then Feed, depending on the model). The printer
-              should measure the gap and feed a few labels. Tear-off position at 0 unless the
-              gap sits off-center.
+              In the Chrome print dialog: Destination = <strong>ZDesigner ZD421-300dpi</strong>, paper size = the{" "}
+              <strong>4x3</strong> stock you created (never “Custom”), layout Portrait, pages per sheet 1, margins{" "}
+              <strong>None</strong>, scale <strong>Default / 100</strong> (never Fit to page), headers and footers off,
+              Background graphics on. It should say <strong>1 sheet of paper</strong> for one label. If it says 2 or
+              more, cancel and use Download ZPL instead.
             </li>
             <li>
-              Starting print quality: darkness around <strong>10–12</strong>, speed{" "}
-              <strong>4 ips</strong>. Go darker only if the bars look washed out; stay slower if
-              they smear.
-            </li>
-            <li>
-              In the Windows Zebra driver: stock 4.00&quot; × 3.00&quot;, media type Labels with
-              Gaps, unprintable margins 0, do not use “fit to page.”
-            </li>
-            <li>
-              In the Chrome / Edge print dialog: Destination = Zebra ZD421, paper size{" "}
-              <strong>4.00&quot; × 3.00&quot;</strong> (add a custom size if it is missing),
-              layout Portrait, scale <strong>100% / Actual size</strong> (never Fit to page),
-              margins <strong>None</strong>, headers and footers <strong>off</strong>, Background
-              graphics <strong>on</strong>.
+              Starting print quality: darkness around <strong>10–12</strong>, speed <strong>4 ips</strong>.
             </li>
           </ol>
-          <p>
-            If you send ZPL instead of the browser dialog, the file already sets{" "}
-            <code>^PW812</code> and <code>^LL609</code> for 4×3 at 203 dpi, with gap tracking (
-            <code>^MNW</code>), a centered QR (<code>^BQ</code>) and an integer-module Code 128 (<code>^BC</code> / <code>^BY</code>) when it fits.
-          </p>
-        </details>
+        </div>
       </div>
 
-      <div className="sheet" data-size={size}>
+      <div className="sheet" data-size={size} data-dpi={dpi}>
         <p className="no-print preview-caption">
-          Actual-size preview for {dim.wIn}&quot; × {dim.hIn}&quot; stock. The dashed box is one
-          label; print uses the same layout with no margin.
+          Actual-size preview for {dim.wIn}&quot; × {dim.hIn}&quot; stock at {dpi} dpi. The dashed box is one label;
+          print uses the same layout with no margin, and each label is exactly one page.
         </p>
         {sheet.map((l) => {
-          const { svg, layout } = labelSvg(l, size, LABEL_DPI);
+          const { svg } = labelSvg(l, size, dpi);
           return (
             <div
               key={l.key}
               className="label"
               style={{
-                width: `${layout.W / LABEL_DPI}in`,
-                height: `${layout.H / LABEL_DPI}in`,
+                width: `${dim.wIn}in`,
+                height: `${dim.hIn}in`,
               }}
             >
               <div
                 className="label-art"
-                style={{ width: "100%", height: "100%" }}
+                style={{ width: `${dim.wIn}in`, height: `${dim.hIn}in` }}
                 dangerouslySetInnerHTML={{ __html: svg }}
               />
             </div>
@@ -276,9 +323,9 @@ function PrintBatteryLabelsInner() {
         .size-card.selected { border-color: #2563eb; background: #eff6ff; color: #1e3a8a; box-shadow: 0 0 0 2px #bfdbfe; }
         .size-thumb { display: block; border: 1px solid #64748b; background: #fff; box-sizing: border-box; }
         .size-name { text-align: center; line-height: 1.25; }
-        .howto { margin-top: 16px; font-size: 13px; color: #334155; }
-        .howto summary { cursor: pointer; font-weight: 600; }
-        .howto ol { margin: 8px 0 0; padding-left: 20px; }
+        .howto { margin-top: 16px; font-size: 13px; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+        .howto p { margin: 8px 0 10px; color: #334155; }
+        .howto ol { margin: 8px 0 12px; padding-left: 20px; }
         .howto li { margin: 6px 0; }
         .howto code { font-size: 12px; }
         .preview-caption { font-family: system-ui, sans-serif; font-size: 13px; color: #475569; width: 100%; margin: 0 0 8px; }
@@ -295,36 +342,17 @@ function PrintBatteryLabelsInner() {
           display: block;
           width: 100%;
           height: 100%;
-          /* Exact device pixels: do not let the browser resample bars. */
+          max-width: 100%;
+          max-height: 100%;
           image-rendering: pixelated;
           image-rendering: crisp-edges;
           shape-rendering: crispEdges;
         }
-        @media print {
-          .no-print { display: none !important; }
-          html, body, .label-print-root {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            width: ${dim.wIn}in;
-            height: ${dim.hIn}in;
-          }
-          .sheet { display: block; padding: 0; gap: 0; }
-          .label {
-            border: none !important;
-            margin: 0;
-            width: ${dim.wIn}in !important;
-            height: ${dim.hIn}in !important;
-            page-break-after: always;
-            break-after: page;
-            box-shadow: none;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          .label:last-child { page-break-after: auto; break-after: auto; }
-          @page { size: ${dim.wIn}in ${dim.hIn}in; margin: 0; }
-        }
       `}</style>
+      <style
+        // Unscoped so @page is honored by Chrome. styled-jsx has dropped @page in the past.
+        dangerouslySetInnerHTML={{ __html: labelPrintCss(dim) }}
+      />
     </div>
   );
 }
