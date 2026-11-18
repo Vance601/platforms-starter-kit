@@ -13,7 +13,9 @@ export async function GET() {
   return NextResponse.json({ success: true, settings });
 }
 
-// Only the org owner can change them.
+// Only the org owner can change prefix / timezone / core charge.
+// Label offsets are left alone unless this request also includes them, so a
+// save from the Settings form cannot wipe a print-page calibration.
 export async function PUT(req: Request) {
   const g = await requireOrg({ roles: ["owner"] });
   if (!g.ok) return g.response;
@@ -22,14 +24,35 @@ export async function PUT(req: Request) {
   if (!v.ok) return NextResponse.json({ success: false, error: v.error }, { status: 400 });
   await ensureOrgSettingsTable();
   const s = v.value;
-  await sql`
-    INSERT INTO org_settings (org_id, barcode_prefix, timezone, core_charge, updated_at)
-    VALUES (${String(g.orgId)}, ${s.barcodePrefix}, ${s.timezone}, ${s.coreCharge}, now())
-    ON CONFLICT (org_id) DO UPDATE SET
-      barcode_prefix = EXCLUDED.barcode_prefix,
-      timezone = EXCLUDED.timezone,
-      core_charge = EXCLUDED.core_charge,
-      updated_at = now();
-  `;
-  return NextResponse.json({ success: true, settings: s });
+  if (v.offsetsProvided) {
+    await sql`
+      INSERT INTO org_settings (
+        org_id, barcode_prefix, timezone, core_charge,
+        label_offset_x_in, label_offset_y_in, updated_at
+      )
+      VALUES (
+        ${String(g.orgId)}, ${s.barcodePrefix}, ${s.timezone}, ${s.coreCharge},
+        ${s.labelOffsetXIn}, ${s.labelOffsetYIn}, now()
+      )
+      ON CONFLICT (org_id) DO UPDATE SET
+        barcode_prefix = EXCLUDED.barcode_prefix,
+        timezone = EXCLUDED.timezone,
+        core_charge = EXCLUDED.core_charge,
+        label_offset_x_in = EXCLUDED.label_offset_x_in,
+        label_offset_y_in = EXCLUDED.label_offset_y_in,
+        updated_at = now();
+    `;
+  } else {
+    await sql`
+      INSERT INTO org_settings (org_id, barcode_prefix, timezone, core_charge, updated_at)
+      VALUES (${String(g.orgId)}, ${s.barcodePrefix}, ${s.timezone}, ${s.coreCharge}, now())
+      ON CONFLICT (org_id) DO UPDATE SET
+        barcode_prefix = EXCLUDED.barcode_prefix,
+        timezone = EXCLUDED.timezone,
+        core_charge = EXCLUDED.core_charge,
+        updated_at = now();
+    `;
+  }
+  const settings = await getOrgSettings(g.orgId);
+  return NextResponse.json({ success: true, settings });
 }
