@@ -287,6 +287,13 @@ function PrintBatteryLabelsInner() {
             <li>
               Starting print quality: darkness around <strong>10–12</strong>, speed <strong>4 ips</strong>.
             </li>
+            <li>
+              If a label prints low, high, or off to one side, the layout itself is centered — the printer&apos;s
+              home position is drifting. Push the 3&quot; roll all the way against the <strong>left media guide</strong>,
+              then run a media calibration (Menu → Tools → Media / Sensor Calibration). In the driver or printer
+              menu set <strong>Label Top</strong> (and Tear-Off) to <strong>0</strong> and Horizontal / Left
+              Position to <strong>0</strong>, then reprint.
+            </li>
           </ol>
         </div>
       </div>
