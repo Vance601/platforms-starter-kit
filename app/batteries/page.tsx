@@ -97,15 +97,16 @@ export default function BatteriesPage() {
       barcode: b.barcode,
       model: b.modelDisplay || b.model || null,
       type: b.classification || null,
+      date: b.receivedAt || null,
     }));
     if (!labels.length) return;
     try {
-      sessionStorage.setItem(PRINT_LABELS_SESSION_KEY, JSON.stringify({ labels, size: "4x3", copies: 1 }));
+      sessionStorage.setItem(PRINT_LABELS_SESSION_KEY, JSON.stringify({ labels, size: "3x2", copies: 1 }));
     } catch {
       // Private browsing — fall through to ids in the URL.
     }
     const ids = labels.map((l) => l.id).join(",");
-    const url = ids.length < 1800 ? `/print/labels?size=4x3&ids=${encodeURIComponent(ids)}` : "/print/labels?src=session&size=4x3";
+    const url = ids.length < 1800 ? `/print/labels?size=3x2&ids=${encodeURIComponent(ids)}` : "/print/labels?src=session&size=3x2";
     window.open(url, "_blank", "noopener");
   }
 

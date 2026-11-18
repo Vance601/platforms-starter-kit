@@ -42,7 +42,8 @@ export async function GET(req: NextRequest) {
       const { rows: batteries } = await sql.query(
         `SELECT b.id, b.barcode,
                 COALESCE(mdl.code, '') AS model_code,
-                COALESCE(bt.code, typ.code, '') AS type_code
+                COALESCE(bt.code, typ.code, '') AS type_code,
+                COALESCE(b.received_at, b.created_at) AS label_date
          FROM batteries b
          JOIN companies c ON c.id = b.company_id
          LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
@@ -112,7 +113,8 @@ export async function GET(req: NextRequest) {
           b.id,
           b.barcode,
           COALESCE(mdl.code, '') AS model_code,
-          COALESCE(bt.code, typ.code, '') AS type_code
+          COALESCE(bt.code, typ.code, '') AS type_code,
+          COALESCE(b.received_at, b.created_at) AS label_date
         FROM batteries b
         JOIN mbs_invoices i ON i.id = b.mbs_invoice_id
         JOIN companies c    ON c.id = i.company_id
@@ -131,7 +133,8 @@ export async function GET(req: NextRequest) {
         b.id,
         b.barcode,
         COALESCE(mdl.code, '') AS model_code,
-        COALESCE(bt.code, typ.code, '') AS type_code
+        COALESCE(bt.code, typ.code, '') AS type_code,
+        COALESCE(b.received_at, b.created_at) AS label_date
       FROM batteries b
       JOIN delivery_receipts dr ON dr.id = b.delivery_receipt_id
       JOIN companies c ON c.id = dr.company_id

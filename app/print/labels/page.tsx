@@ -7,6 +7,7 @@ import {
   DEFAULT_LABEL_SIZE,
   DEMO_LABELS,
   LABEL_DPI_STORAGE_KEY,
+  LABEL_SIZE_STORAGE_KEY,
   LABEL_SIZES,
   type LabelDpi,
   type LabelItem,
@@ -35,10 +36,15 @@ function PrintBatteryLabelsInner() {
   const isDemo = params.get("demo") === "1" || params.get("preview") === "1";
 
   useEffect(() => {
-    if (params.get("dpi")) return;
     try {
-      const saved = localStorage.getItem(LABEL_DPI_STORAGE_KEY);
-      if (saved) setDpi(parseLabelDpi(saved));
+      if (!params.get("dpi")) {
+        const savedDpi = localStorage.getItem(LABEL_DPI_STORAGE_KEY);
+        if (savedDpi) setDpi(parseLabelDpi(savedDpi));
+      }
+      if (!params.get("size")) {
+        const savedSize = localStorage.getItem(LABEL_SIZE_STORAGE_KEY);
+        if (savedSize) setSize(parseLabelSize(savedSize));
+      }
     } catch {
       // ignore missing localStorage
     }
@@ -100,6 +106,7 @@ function PrintBatteryLabelsInner() {
           barcode: b.barcode,
           model: b.model_code || b.model || null,
           type: b.type_code || b.classification || b.type || null,
+          date: b.label_date || b.received_at || b.created_at || null,
         }));
         if (!cancelled) setLabels(rows);
       } catch (e) {
@@ -131,6 +138,15 @@ function PrintBatteryLabelsInner() {
     }
   }
 
+  function changeSize(next: LabelSizeId) {
+    setSize(next);
+    try {
+      localStorage.setItem(LABEL_SIZE_STORAGE_KEY, next);
+    } catch {
+      // ignore
+    }
+  }
+
   function downloadZpl() {
     const zpl = labelsToZpl(labels, size, copies, dpi);
     const blob = new Blob([zpl], { type: "text/plain" });
@@ -147,9 +163,10 @@ function PrintBatteryLabelsInner() {
         <div>
           <h1>Print battery labels</h1>
           <p>
-            One label per barcode, with a large QR code (the reliable scan target) and a Code 128 underneath when it
-            fits. Default stock is <strong>4&quot; × 3&quot; die-cut</strong> for the Zebra ZD421. The Duggers printer
-            is the <strong>300 dpi</strong> model; pick 203 only if the printer name says 203 dpi.
+            One label per battery. Default stock is the <strong>3&quot; × 2&quot; die-cut</strong> roll in the Zebra
+            ZD421. A large QR (the scan target) sits on the left; the date, battery size, and ID sit on the right. A
+            Code 128 goes underneath only when it fits. The Duggers printer is the <strong>300 dpi</strong> model; pick
+            203 only if the printer name says 203 dpi.
           </p>
         </div>
         {isDemo ? (
@@ -177,7 +194,7 @@ function PrintBatteryLabelsInner() {
                 role="option"
                 aria-selected={selected}
                 className={selected ? "size-card selected" : "size-card"}
-                onClick={() => setSize(s.id)}
+                onClick={() => changeSize(s.id)}
                 title={s.name}
               >
                 <span
@@ -222,13 +239,13 @@ function PrintBatteryLabelsInner() {
         <div className="howto open-howto">
           <strong>Recommended: send ZPL straight to the printer.</strong>
           <p>
-            Browser print has to go through Chrome and the Windows driver, which is what printed one label across four
-            stickers last time. The ZPL file already sets the exact size (
+            Browser print has to go through Chrome and the Windows driver, which is what printed the wrong size last
+            time. The ZPL file already sets the exact size (
             <code>
               ^PW{dots.W} ^LL{dots.H}
             </code>{" "}
-            for {dim.wIn}&quot; × {dim.hIn}&quot; at {dpi} dpi), the gap sensor, the QR, and the barcode. Use{" "}
-            <strong>Download ZPL</strong>, then:
+            for {dim.wIn}&quot; × {dim.hIn}&quot; at {dpi} dpi), the gap sensor, the QR, the date, and the barcode when
+            it fits. Use <strong>Download ZPL</strong>, then:
           </p>
           <ol>
             <li>Open <strong>Zebra Setup Utilities</strong> → select the ZD421 → <strong>Open Communication With Printer</strong>.</li>
@@ -239,36 +256,33 @@ function PrintBatteryLabelsInner() {
               must be shared under that name).
             </li>
           </ol>
-          <p>
-            Zebra Browser Print can also send ZPL from the browser, but battery-city.com is HTTPS and Browser Print is
-            a local service, so certificates get in the way. Downloading the file is more reliable; we did not add a
-            Send button for that reason.
-          </p>
           <strong>If you do print from Chrome, set the driver stock first — do not use “Custom.”</strong>
           <ol>
             <li>
-              Load the 4&quot; × 3&quot; die-cut roll so the labels feed in the 3&quot; direction (4&quot; across the
-              print head — the ZD421&apos;s maximum width).
+              Load the {dim.wIn}&quot; × {dim.hIn}&quot; die-cut roll so {dim.wIn}&quot; is across the print head and
+              the labels feed in the {dim.hIn}&quot; direction.
             </li>
             <li>
               In Windows: right-click <strong>ZDesigner ZD421-300dpi</strong> → <strong>Printing Preferences</strong> →{" "}
-              <strong>Page Setup</strong> → <strong>Stock: New</strong> → name it <strong>4x3</strong>, size{" "}
-              <strong>4.00 × 3.00 in</strong>, orientation <strong>Portrait</strong>. Save. Pick that stock (not
-              Custom). Media type: Labels with Gaps. Unprintable margins: 0. Do not use “fit to page.”
+              <strong>Page Setup</strong> → <strong>Stock: New</strong> → name it <strong>{size}</strong>, size{" "}
+              <strong>{dim.wIn.toFixed(2)} × {dim.hIn.toFixed(2)} in</strong>
+              {size === "3x2" ? " (76 × 51 mm)" : ""}, orientation <strong>Portrait</strong>. Save. Pick that stock
+              (not Custom). Media type: Labels with Gaps. Unprintable margins: 0. Do not use “fit to page.”
             </li>
             <li>
               On the printer menu: <strong>Media Type = Gap / Web</strong> (not Continuous),{" "}
               <strong>Print Method = Direct Thermal</strong> if there is no ribbon,{" "}
-              <strong>Print Width = 4.00 in</strong> (1200 dots at 300 dpi, or 812 dots at 203 dpi),{" "}
-              <strong>Label Length = 3.00 in</strong> (900 dots at 300 dpi, or 609 dots at 203 dpi). Run a media
-              calibration (Menu → Tools → Media / Sensor Calibration) after changing stock.
+              <strong>Print Width = {dim.wIn.toFixed(2)} in</strong> ({dots.W} dots at {dpi} dpi),{" "}
+              <strong>Label Length = {dim.hIn.toFixed(2)} in</strong> ({dots.H} dots). Run a media calibration (Menu →
+              Tools → Media / Sensor Calibration) after changing stock.
             </li>
             <li>
               In the Chrome print dialog: Destination = <strong>ZDesigner ZD421-300dpi</strong>, paper size = the{" "}
-              <strong>4x3</strong> stock you created (never “Custom”), layout Portrait, pages per sheet 1, margins{" "}
-              <strong>None</strong>, scale <strong>Default / 100</strong> (never Fit to page), headers and footers off,
-              Background graphics on. It should say <strong>1 sheet of paper</strong> for one label. If it says 2 or
-              more, cancel and use Download ZPL instead.
+              <strong>{size}</strong> stock you created (or 3×2 / 76×51 mm; never “Custom”), layout Portrait, pages per
+              sheet 1, margins <strong>None</strong>, scale <strong>Default / 100</strong> or <strong>Actual size</strong>{" "}
+              (never Fit to page), headers and footers off, Background graphics on. It should say{" "}
+              <strong>1 sheet of paper</strong> for one label. If it says 2 or more, cancel and use Download ZPL
+              instead.
             </li>
             <li>
               Starting print quality: darkness around <strong>10–12</strong>, speed <strong>4 ips</strong>.
