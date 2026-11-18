@@ -21,8 +21,22 @@ export const LABEL_SIZES = {
 
 export type LabelSizeId = keyof typeof LABEL_SIZES;
 export const DEFAULT_LABEL_SIZE: LabelSizeId = "4x3";
-/** Zebra ZD421 standard resolution. */
-export const LABEL_DPI = 203;
+export const LABEL_DPIS = [203, 300] as const;
+export type LabelDpi = (typeof LABEL_DPIS)[number];
+/** Duggers' ZD421 is the 300 dpi model. 203 remains for older printers. */
+export const DEFAULT_LABEL_DPI: LabelDpi = 300;
+/** Alias of DEFAULT_LABEL_DPI so older call sites keep compiling. */
+export const LABEL_DPI = DEFAULT_LABEL_DPI;
+export const LABEL_DPI_STORAGE_KEY = "bc_label_dpi";
+
+export function parseLabelDpi(raw: unknown): LabelDpi {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return n === 203 || n === 300 ? (n as LabelDpi) : DEFAULT_LABEL_DPI;
+}
+
+export function labelDots(size: { wIn: number; hIn: number }, dpi: number) {
+  return { W: Math.round(size.wIn * dpi), H: Math.round(size.hIn * dpi) };
+}
 /** Minimum Code 128 module width, in printer dots. */
 export const MIN_CODE128_MODULE_DOTS = 3;
 /** Minimum Code 128 quiet zone. */
@@ -91,10 +105,10 @@ export type LabelLayout = {
 };
 
 /**
- * Pixel-exact 203 dpi layout. QR is the primary symbol (large, integer cell
- * size, 4-module quiet zone). Code 128 sits under it only when it fits with
- * integer modules (prefer ≥3 dots) and ≥0.25" quiet zones. Nothing is
- * fractionally scaled.
+ * Pixel-exact layout at the given printer dpi. QR is the primary symbol
+ * (large, integer cell size, 4-module quiet zone). Code 128 sits under it
+ * only when it fits with integer modules (prefer ≥3 dots) and ≥0.25" quiet
+ * zones. Nothing is fractionally scaled.
  */
 export function layoutLabel(
   item: LabelItem,
@@ -206,18 +220,25 @@ function code128Rects(layout: LabelLayout): string {
   return rects.join("");
 }
 
-/** Full-label SVG at exact device pixels (1 user unit = 1 dot). */
+/**
+ * Full-label SVG. The viewBox is exact device pixels (1 user unit = 1 dot)
+ * but width/height are in inches so browsers (and Chrome's print dialog)
+ * treat the graphic as 4"×3", not as 1200×900 CSS pixels (~12.5"×9.4" at
+ * 96 dpi, which spilled across four labels).
+ */
 export function labelSvg(
   item: LabelItem,
   sizeId: LabelSizeId = DEFAULT_LABEL_SIZE,
   dpi = LABEL_DPI,
 ): { svg: string; layout: LabelLayout } {
   const layout = layoutLabel(item, sizeId, dpi);
+  const size = LABEL_SIZES[sizeId];
   const { W, H, fontH, subH, data, sub, textY, subY, pad } = layout;
   const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" shape-rendering="crispEdges" role="img" aria-label="${escapeXml(data)}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size.wIn}in" height="${size.hIn}in" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" role="img" aria-label="${escapeXml(data)}">`,
     `<rect width="${W}" height="${H}" fill="#fff"/>`,
-    `<g fill="#000">${qrRects(layout)}${code128Rects(layout)}</g>`,
+    `<g fill="#000" transform="translate(${layout.qr.x},${layout.qr.y})">${qrRects(layout)}</g>`,
+    `<g fill="#000">${code128Rects(layout)}</g>`,
     `<text x="${W / 2}" y="${textY + fontH - 4}" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="${fontH}" font-weight="650" fill="#000">${escapeXml(data)}</text>`,
   ];
   if (sub) {
@@ -229,7 +250,37 @@ export function labelSvg(
   return { svg: parts.join(""), layout };
 }
 
-/** ZPL II for a Zebra ZD421 (direct thermal, 203 dpi). One ^XA..^XZ per label. */
+
+/** 1-bit ^GFA graphic of the QR (including its 4-module quiet zone), 1 = black. */
+function zplQrGraphic(layout: LabelLayout): string {
+  const { qr } = layout;
+  const size = qr.size;
+  const rowBytes = Math.ceil(size / 8);
+  const total = rowBytes * size;
+  const origin = qr.quiet * qr.cell;
+  const hex: string[] = [];
+  for (let y = 0; y < size; y++) {
+    for (let byte = 0; byte < rowBytes; byte++) {
+      let v = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const x = byte * 8 + bit;
+        let on = 0;
+        if (x < size) {
+          const mx = Math.floor((x - origin) / qr.cell);
+          const my = Math.floor((y - origin) / qr.cell);
+          if (mx >= 0 && my >= 0 && mx < qr.bits.length && my < qr.bits.length && qr.bits[my][mx]) on = 1;
+        }
+        v = (v << 1) | on;
+      }
+      hex.push(v.toString(16).padStart(2, "0"));
+    }
+  }
+  return `^FO${qr.x},${qr.y}^GFA,${total},${total},${rowBytes},${hex.join("").toUpperCase()}^FS`;
+}
+
+/** ZPL II for a Zebra ZD421 (direct thermal). One ^XA..^XZ per label.
+ *  Dots follow the given dpi: 4×3 is ^PW812/^LL609 at 203 dpi, or
+ *  ^PW1200/^LL900 at 300 dpi. */
 export function labelsToZpl(
   labels: LabelItem[],
   sizeId: LabelSizeId = DEFAULT_LABEL_SIZE,
@@ -244,8 +295,6 @@ export function labelsToZpl(
     const data = zplEscape(layout.data);
     const sub = zplEscape(layout.sub);
     const { W, H, pad, fontH, subH, qr, code128, textY, subY } = layout;
-    // ^BQ magnification is the cell size in dots (typically 1–10).
-    const mag = Math.max(1, Math.min(10, qr.cell));
     const lines = [
       "^XA",
       "^CI28",
@@ -258,9 +307,12 @@ export function labelsToZpl(
       // made the printer ignore the gap, so length and placement drifted.
       "^MNW",
       "^PR4",
-      // QR is the primary symbol (model 2, enhanced). FO is the top-left of
-      // the symbol including the 4-module quiet zone we reserved.
-      `^FO${qr.x},${qr.y}^BQN,2,${mag}^FDQA,${data}^FS`,
+      // Native ^BQ magnification maxes out at 10. At 300 dpi the layout cell
+      // is often 15–17, so send the QR as an exact-dot graphic instead of a
+      // shrunken ^BQ. FO is the top-left of the reserved quiet-zone box.
+      qr.cell <= 10
+        ? `^FO${qr.x},${qr.y}^BQN,2,${qr.cell}^FDQA,${data}^FS`
+        : zplQrGraphic(layout),
     ];
     if (code128) {
       lines.push(
@@ -339,4 +391,66 @@ export function rasterToPbm(width: number, height: number, mono: Uint8Array): Bu
     }
   }
   return Buffer.concat([header, body]);
+}
+
+/** Print-only CSS shared by the labels page and the headless verification script.
+ *  One label = one page, content box strictly equal to the @page size. */
+export function labelPrintCss(size: { wIn: number; hIn: number }): string {
+  const w = `${size.wIn}in`;
+  const h = `${size.hIn}in`;
+  return `
+@page { size: ${w} ${h}; margin: 0; }
+@media print {
+  .no-print { display: none !important; }
+  html, body, .label-print-root {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    min-height: 0 !important;
+    height: auto !important;
+    width: auto !important;
+    overflow: visible !important;
+    color-scheme: only light;
+  }
+  .sheet {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+  }
+  .label {
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: ${w} !important;
+    height: ${h} !important;
+    max-width: ${w} !important;
+    max-height: ${h} !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    page-break-after: always;
+    break-after: page;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .label:last-child,
+  .label:last-of-type {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .label-art,
+  .label-art svg {
+    display: block !important;
+    width: ${w} !important;
+    height: ${h} !important;
+    max-width: ${w} !important;
+    max-height: ${h} !important;
+    overflow: hidden !important;
+  }
+}
+`.trim();
 }

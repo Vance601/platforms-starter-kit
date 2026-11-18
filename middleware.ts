@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
   "/api/public/signup",
   "/api/public/demo", // one-click demo (rate limited)
   "/video", // public shareable ad page
+  "/print", // label preview (?demo=1) — data still loaded through authed /api/print-labels
   "/api/cron/demo-cleanup", // checks CRON_SECRET itself
   "/api/migrate-reset-duggers-inventory", // MIGRATE_SECRET or platform owner inside
   "/api/migrate-battery-catalog", // MIGRATE_SECRET or platform owner inside
