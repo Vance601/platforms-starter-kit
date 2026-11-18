@@ -8,6 +8,7 @@ import {
   type LabelDpi,
   type LabelSizeId,
   formatLabelDate,
+  labelContentBounds,
   labelPrintCss,
   labelSvg,
   labelsToZpl,
@@ -67,6 +68,7 @@ function writeBundle(item: LabelItem, dpi: LabelDpi, size: LabelSizeId = sizeId)
       code128Width: layout.code128?.width ?? null,
       text: layout.lines.map((l) => l.text),
       pad: layout.pad,
+      bounds: labelContentBounds(layout),
     }),
   );
   return { svg, width, height, layout, bounds };
@@ -112,9 +114,37 @@ function printHtml(items: LabelItem[], dpi: LabelDpi) {
 </html>`;
 }
 
-const chris = samples[2];
+const chris = samples[1]; // DG-PHX-78-20261116-0001, the label Chris just printed
 writeFileSync(`${outDir}/print-1-label-300dpi.html`, printHtml([chris], 300));
-writeFileSync(`${outDir}/print-3-labels-300dpi.html`, printHtml([samples[0], samples[1], chris], 300));
+writeFileSync(`${outDir}/print-3-labels-300dpi.html`, printHtml(samples, 300));
 writeFileSync(`${outDir}/print-1-label-203dpi.html`, printHtml([chris], 203));
 console.log("html", `${outDir}/print-1-label-300dpi.html`, `${outDir}/print-3-labels-300dpi.html`);
 console.log("defaultDpi", DEFAULT_LABEL_DPI, "defaultSize", DEFAULT_LABEL_SIZE);
+
+const zpl300 = labelsToZpl([chris], sizeId, 1, 300);
+const { layout: chrisLayout } = labelSvg(chris, sizeId, 300);
+const fos = [...zpl300.matchAll(/\^FO(\d+),(\d+)/g)].map((m) => ({ x: Number(m[1]), y: Number(m[2]) }));
+const expected = [
+  { x: chrisLayout.qr.x, y: chrisLayout.qr.y },
+  ...chrisLayout.lines.map((l) => ({ x: l.x, y: l.y })),
+];
+if (chrisLayout.code128) expected.push({ x: chrisLayout.code128.x, y: chrisLayout.code128.y });
+const foMatch =
+  fos.length === expected.length && fos.every((f, i) => f.x === expected[i].x && f.y === expected[i].y);
+const bounds = labelContentBounds(chrisLayout);
+console.log(
+  JSON.stringify({
+    zplOriginsMatch: foMatch,
+    fos,
+    expected,
+    hasLH0: zpl300.includes("^LH0,0"),
+    hasLS0: zpl300.includes("^LS0"),
+    hasLT0: zpl300.includes("^LT0"),
+    pwll: { pw: chrisLayout.W, ll: chrisLayout.H },
+    bounds,
+    centerOffsetIn: {
+      dx: (bounds.cx - chrisLayout.W / 2) / chrisLayout.dpi,
+      dy: (bounds.cy - chrisLayout.H / 2) / chrisLayout.dpi,
+    },
+  }),
+);

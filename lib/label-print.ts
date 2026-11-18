@@ -32,7 +32,10 @@ export const DEFAULT_LABEL_DPI: LabelDpi = 300;
 export const LABEL_DPI = DEFAULT_LABEL_DPI;
 export const LABEL_DPI_STORAGE_KEY = "bc_label_dpi";
 /** Keep content at least this far from every edge. */
-export const SAFE_MARGIN_IN = 0.1;
+export const SAFE_MARGIN_IN = 0.12;
+/** Target QR size on 3×2 stock (and any label tall enough to allow it). */
+export const QR_TARGET_MIN_IN = 1.3;
+export const QR_TARGET_MAX_IN = 1.4;
 
 export function parseLabelDpi(raw: unknown): LabelDpi {
   const n = typeof raw === "number" ? raw : Number(raw);
@@ -151,6 +154,46 @@ function wrapLines(text: string, maxWidth: number, fontH: number, maxLines: numb
   return lines.slice(0, maxLines);
 }
 
+
+function textWidthDots(text: string, fontH: number) {
+  return Math.ceil(Math.max(0, text.length) * monoCharWidth(fontH));
+}
+
+/** Split a battery ID into two lines at a dash closest to the midpoint. */
+function splitIdTwoLines(data: string): string[] {
+  if (!data) return [];
+  const mid = Math.ceil(data.length / 2);
+  let best = -1;
+  let bestDist = Infinity;
+  for (let i = 1; i < data.length - 1; i++) {
+    if (data[i] === "-") {
+      const dist = Math.abs(i - mid);
+      if (dist < bestDist) {
+        best = i;
+        bestDist = dist;
+      }
+    }
+  }
+  if (best > 0) return [data.slice(0, best), data.slice(best + 1)];
+  const half = Math.ceil(data.length / 2);
+  return [data.slice(0, half), data.slice(half)];
+}
+
+/** Prefer one ID line when it stays readable; otherwise wrap to two. */
+function fitIdLines(data: string, textW: number, dpi: number): { lines: string[]; fontH: number } {
+  const minOneLine = Math.round(0.11 * dpi);
+  const maxFont = Math.round(0.13 * dpi);
+  if (!data) return { lines: [], fontH: Math.max(12, minOneLine) };
+  const one = Math.floor(textW / (data.length * 0.62));
+  if (one >= minOneLine) {
+    return { lines: [data], fontH: Math.min(maxFont, one) };
+  }
+  const lines = splitIdTwoLines(data);
+  const longest = Math.max(...lines.map((l) => l.length), 1);
+  const two = Math.floor(textW / (longest * 0.62));
+  return { lines, fontH: Math.max(12, Math.min(maxFont, two)) };
+}
+
 export type QrMatrix = boolean[][];
 
 export function qrMatrix(text: string): QrMatrix {
@@ -202,11 +245,15 @@ export type LabelLayout = {
   subY: number;
 };
 
+
 /**
  * Pixel-exact layout at the given printer dpi.
- * QR (primary, must scan) sits on the left. Date, size/model, and ID sit on
- * the right. Code 128 goes under both only when it fits with integer modules
- * and a proper quiet zone, without overlapping or touching the 0.1" margins.
+ * The QR + text (and Code 128, when it fits) are treated as one group and
+ * centered horizontally and vertically, with ≥ 0.12" clearance on every
+ * side. The QR is the scan target (~1.3–1.4" on 3×2). The text block is
+ * vertically centered against the QR. Code 128 is included only when it
+ * fits with a scannable module width, without overlapping or leaving the
+ * margins.
  */
 export function layoutLabel(
   item: LabelItem,
@@ -219,7 +266,8 @@ export function layoutLabel(
   const pad = Math.max(1, Math.round(SAFE_MARGIN_IN * dpi));
   const data = String(item.barcode || "");
   const date = formatLabelDate(item.date, data);
-  const sub = [item.type, item.model].filter(Boolean).join(" ");
+  // Model first, then size/type, e.g. "Bravo 78".
+  const sub = [item.model, item.type].filter(Boolean).join(" ");
   const bits = qrMatrix(data);
   const qrQuiet = 4;
   const qrN = bits.length + qrQuiet * 2;
@@ -239,35 +287,39 @@ export function layoutLabel(
     c128Module = minModule;
     while (needed(c128Module + 1) <= usableW && c128Module < 8) c128Module += 1;
   }
-
   const c128H = c128Module ? Math.max(Math.round(0.2 * dpi), Math.round(dpi * (size.hIn >= 2.5 ? 0.28 : 0.22))) : 0;
   const c128Gap = c128Module ? Math.max(8, Math.round(0.06 * dpi)) : 0;
-  const bottomReserve = c128Module ? c128H + c128Gap : 0;
-  const innerH = Math.max(40, H - pad * 2 - bottomReserve);
+  let c128Width = 0;
+  let c128Quiet = 0;
+  if (c128Module && c128H) {
+    c128Quiet = Math.max(minQuietPx, 10 * c128Module);
+    c128Width = c128Bits.length * c128Module + c128Quiet * 2;
+  }
 
-  // Date "MM/DD/YYYY" must fit on one line at a readable size. Reserve at
-  // least 1.15" for the text column so the date stays clear.
+  // Date "MM/DD/YYYY" must fit on one line. Reserve ~1.15" for the text column.
   const minTextW = Math.round(Math.max(1.15, Math.min(1.35, size.wIn * 0.4)) * dpi);
+  const barcodeReserve = c128Module ? c128H + c128Gap : 0;
+  const innerH = Math.max(40, H - pad * 2 - barcodeReserve);
   const maxQrByWidth = usableW - gap - minTextW;
-  const maxQr = Math.max(40, Math.min(innerH, maxQrByWidth));
-  const qrCell = Math.max(2, Math.floor(maxQr / qrN));
+  const maxQrCap = Math.round(QR_TARGET_MAX_IN * dpi);
+  const maxQr = Math.max(40, Math.min(innerH, maxQrByWidth, size.hIn >= 2 ? maxQrCap : innerH));
+  let qrCell = Math.max(2, Math.floor(maxQr / qrN));
+  // Prefer at least 1.3" on stock that can hold it, without exceeding 1.4" or the cap.
+  const minQr = Math.round(QR_TARGET_MIN_IN * dpi);
+  if (qrN * (qrCell + 1) <= maxQr && qrN * qrCell < minQr) {
+    qrCell += 1;
+  }
   const qrSize = qrN * qrCell;
 
-  const qrX = pad;
-  const qrY = pad + Math.max(0, Math.floor((innerH - qrSize) / 2));
-  const textX = pad + qrSize + gap;
-  const textW = Math.max(20, W - pad - textX);
-
+  const textW = Math.max(20, W - pad * 2 - qrSize - gap);
   const dateFontH = Math.max(
     18,
     Math.min(Math.round(0.2 * dpi), Math.floor(textW / (10 * 0.62))),
   );
   const modelFontH = Math.max(14, Math.round(Math.min(0.15, Math.max(0.11, size.hIn * 0.07)) * dpi));
-  const idFontH = Math.max(12, Math.round(Math.min(0.13, Math.max(0.1, size.hIn * 0.06)) * dpi));
+  const { lines: idLines, fontH: idFontH } = fitIdLines(data, textW, dpi);
   const lineGap = Math.max(6, Math.round(0.035 * dpi));
 
-  const idLines = wrapLines(data, textW, idFontH, 3);
-  const lines: LabelTextLine[] = [];
   const stack: { text: string; fontH: number; weight: number }[] = [];
   if (date) stack.push({ text: date, fontH: dateFontH, weight: 700 });
   if (sub) stack.push({ text: sub, fontH: modelFontH, weight: 600 });
@@ -275,11 +327,35 @@ export function layoutLabel(
 
   const textBlockH =
     stack.reduce((sum, l, i) => sum + l.fontH + (i > 0 ? lineGap : 0), 0) || dateFontH;
-  const textMaxBottom = H - pad - bottomReserve;
-  let textY0 = qrY + Math.max(0, Math.floor((qrSize - textBlockH) / 2));
-  if (textY0 + textBlockH > textMaxBottom) textY0 = Math.max(pad, textMaxBottom - textBlockH);
-  if (textY0 < pad) textY0 = pad;
+  const actualTextW = Math.max(
+    minTextW,
+    ...stack.map((l) => textWidthDots(l.text, l.fontH)),
+  );
+  const pairW = qrSize + gap + Math.min(textW, actualTextW);
 
+  // If the barcode would not actually fit under the QR+text group, drop it
+  // before we compute the centered origin.
+  let useC128 = Boolean(c128Module && c128H && c128Width <= usableW);
+  if (useC128 && pad + qrSize + c128Gap + c128H + pad > H) useC128 = false;
+
+  const groupW = Math.max(pairW, useC128 ? c128Width : 0);
+  const groupH = qrSize + (useC128 ? c128Gap + c128H : 0);
+
+  let groupX = Math.floor((W - groupW) / 2);
+  let groupY = Math.floor((H - groupH) / 2);
+  if (groupX < pad) groupX = pad;
+  if (groupY < pad) groupY = pad;
+  if (groupX + groupW > W - pad) groupX = Math.max(pad, W - pad - groupW);
+  if (groupY + groupH > H - pad) groupY = Math.max(pad, H - pad - groupH);
+
+  const qrX = groupX;
+  const qrY = groupY;
+  const textX = qrX + qrSize + gap;
+  let textY0 = qrY + Math.max(0, Math.floor((qrSize - textBlockH) / 2));
+  if (textY0 < pad) textY0 = pad;
+  if (textY0 + textBlockH > H - pad) textY0 = Math.max(pad, H - pad - textBlockH);
+
+  const lines: LabelTextLine[] = [];
   let y = textY0;
   for (const l of stack) {
     lines.push({ text: l.text, x: textX, y, fontH: l.fontH, weight: l.weight });
@@ -287,15 +363,17 @@ export function layoutLabel(
   }
 
   let code128: Code128Layout | null = null;
-  if (c128Module && c128H) {
-    const quietPx = Math.max(minQuietPx, 10 * c128Module);
-    const width = c128Bits.length * c128Module + quietPx * 2;
-    const x = Math.max(pad, Math.floor((W - width) / 2));
-    const cY = H - pad - c128H;
-    const contentBottom = Math.max(qrY + qrSize, textY0 + textBlockH);
-    const inBounds = x >= pad && x + width <= W - pad && cY >= contentBottom + Math.round(0.04 * dpi) && cY + c128H <= H - pad;
+  if (useC128) {
+    const cY = qrY + qrSize + c128Gap;
+    const cX = Math.max(pad, Math.floor((W - c128Width) / 2));
+    const inBounds =
+      cX >= pad &&
+      cX + c128Width <= W - pad &&
+      cY >= qrY + qrSize + Math.round(0.04 * dpi) &&
+      cY + c128H <= H - pad &&
+      textY0 + textBlockH <= cY - Math.round(0.04 * dpi);
     if (inBounds) {
-      code128 = { x, y: cY, module: c128Module, height: c128H, quietPx, width };
+      code128 = { x: cX, y: cY, module: c128Module, height: c128H, quietPx: c128Quiet, width: c128Width };
     }
   }
 
@@ -318,6 +396,34 @@ export function layoutLabel(
     textW,
     textY: first?.y ?? textY0,
     subY: second?.y ?? textY0,
+  };
+}
+
+/** Axis-aligned bounds of QR, text, and Code 128, in dots. */
+export function labelContentBounds(layout: LabelLayout) {
+  const xs: number[] = [layout.qr.x, layout.qr.x + layout.qr.size];
+  const ys: number[] = [layout.qr.y, layout.qr.y + layout.qr.size];
+  if (layout.code128) {
+    xs.push(layout.code128.x, layout.code128.x + layout.code128.width);
+    ys.push(layout.code128.y, layout.code128.y + layout.code128.height);
+  }
+  for (const l of layout.lines) {
+    xs.push(l.x, l.x + textWidthDots(l.text, l.fontH));
+    ys.push(l.y, l.y + l.fontH);
+  }
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  const x1 = Math.max(...xs);
+  const y1 = Math.max(...ys);
+  return {
+    x0,
+    y0,
+    x1,
+    y1,
+    cx: (x0 + x1) / 2,
+    cy: (y0 + y1) / 2,
+    w: x1 - x0,
+    h: y1 - y0,
   };
 }
 
@@ -450,6 +556,7 @@ export function labelsToZpl(
       "^LH0,0",
       "^LS0",
       "^LT0",
+      "^PON",
       // Die-cut / gap media. ^MNN (continuous) was wrong for this stock and
       // made the printer ignore the gap, so length and placement drifted.
       "^MNW",
