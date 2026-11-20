@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DriverNav from "@/components/driver-nav";
 import { BarcodeReader } from "@/components/barcode-reader";
+import { findScannedItem } from "@/lib/scan-code";
 
 type Battery = {
   id: string;
@@ -47,12 +48,7 @@ export default function DriverLoadPage() {
   // Highlight-and-tap: a scan selects the matching battery and scrolls to it,
   // but never submits. The driver still presses Load to commit.
   function handleScan(code: string) {
-    const needle = code.trim().toLowerCase();
-    const match = batteries.find(
-      (b) =>
-        b.barcode?.trim().toLowerCase() === needle ||
-        b.serial_number?.trim().toLowerCase() === needle
-    );
+    const match = findScannedItem(batteries, code);
 
     if (!match) {
       setHighlightId(null);
