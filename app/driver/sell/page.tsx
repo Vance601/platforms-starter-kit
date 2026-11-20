@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DriverNav from "@/components/driver-nav";
 import BarcodeReader from "@/components/barcode-reader";
+import { findScannedItem } from "@/lib/scan-code";
 import { VinStep, vinStateMissing, type VinSaleState } from "@/components/vin-step";
 
 type Battery = {
@@ -66,10 +67,7 @@ export default function DriverSellPage() {
   const isMatch = (id: string) => !!vinState?.group && groupById.get(id) === vinState.group;
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   function onBatteryScan(code: string) {
-    const c = code.trim().toUpperCase();
-    const hit = batteries.find(
-      (b) => b.barcode.toUpperCase() === c || (b.serial_number || "").toUpperCase() === c
-    );
+    const hit = findScannedItem(batteries, code);
     if (hit) {
       setSelectedId(hit.id);
       const g = groupById.get(hit.id);

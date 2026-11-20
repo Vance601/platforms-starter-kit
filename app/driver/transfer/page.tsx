@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BarcodeReader } from "@/components/barcode-reader";
+import { normalizeScanText } from "@/lib/scan-code";
 import DriverNav from "@/components/driver-nav";
 
 type Truck = {
@@ -70,7 +71,7 @@ export default function TransferPage() {
   function handleScan(code: string) {
     setError("");
     setResult(null);
-    claim({ truckCode: code });
+    claim({ truckCode: normalizeScanText(code) });
   }
 
   async function claim(args: {
