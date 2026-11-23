@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
 
 type Location = {
   id: string;
@@ -36,7 +37,7 @@ export default function ReceiveOrderPage() {
   const [poNumber, setPoNumber] = useState("");
   const [locationId, setLocationId] = useState("");
   const [totalAmount, setTotalAmount] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [invoiceDate, setInvoiceDate] = useState(() => todayYmd(DEFAULT_BUSINESS_TIMEZONE));
 
   // Scan results
   const [scanLines, setScanLines] = useState<ScanLine[]>([]);

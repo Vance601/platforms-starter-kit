@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { normalizeBatteryType } from "@/lib/battery-types";
 import { getCurrentUser } from "@/lib/current-user";
+import { optionalYmdBounds } from "@/lib/org-day-range";
+import { orgTimezone } from "@/lib/org-timezone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -45,11 +47,12 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const rawStart = searchParams.get("start");
-    const rawEnd = searchParams.get("end");
-    // Normalise "" to null so the SQL guards below treat it as "no bound".
-    const start = rawStart && rawStart.trim() !== "" ? rawStart : null;
-    const end = rawEnd && rawEnd.trim() !== "" ? rawEnd : null;
+    const timeZone = await orgTimezone(user.orgId);
+    const { startYmd: start, endYmd: end, startIso, endIso } = optionalYmdBounds(
+      searchParams.get("start"),
+      searchParams.get("end"),
+      timeZone,
+    );
 
     const org = user.orgId;
 
@@ -88,8 +91,8 @@ export async function GET(req: Request) {
       JOIN batteries b ON b.id = m.battery_id
       JOIN companies c ON c.id = b.company_id
       WHERE c.org_id = ${org}
-        AND (${start}::text IS NULL OR m.occurred_at >= ${start}::timestamp)
-        AND (${end}::text   IS NULL OR m.occurred_at <  (${end}::date + INTERVAL '1 day'))
+        AND (${startIso}::timestamptz IS NULL OR m.occurred_at >= ${startIso}::timestamptz)
+        AND (${endIso}::timestamptz   IS NULL OR m.occurred_at < ${endIso}::timestamptz)
       GROUP BY 1, 2
       ORDER BY count DESC;
     `;
@@ -113,8 +116,8 @@ export async function GET(req: Request) {
       WHERE c.org_id = ${org}
         AND m.to_status = 'on_truck'
         AND m.from_status = 'in_warehouse'
-        AND (${start}::text IS NULL OR m.occurred_at >= ${start}::timestamp)
-        AND (${end}::text   IS NULL OR m.occurred_at <  (${end}::date + INTERVAL '1 day'))
+        AND (${startIso}::timestamptz IS NULL OR m.occurred_at >= ${startIso}::timestamptz)
+        AND (${endIso}::timestamptz   IS NULL OR m.occurred_at < ${endIso}::timestamptz)
       GROUP BY 1
       ORDER BY count DESC;
     `;
@@ -126,14 +129,14 @@ export async function GET(req: Request) {
     // but is still a sale. Filtering on status undercounts.
     const soldRows = await sql`
       SELECT
-        to_char(date_trunc('month', b.sold_at), 'YYYY-MM') AS month,
+        to_char(date_trunc('month', b.sold_at AT TIME ZONE ${timeZone}), 'YYYY-MM') AS month,
         count(*)::int                                      AS count
       FROM batteries b
       JOIN companies c ON c.id = b.company_id
       WHERE c.org_id = ${org}
         AND b.sold_at IS NOT NULL
-        AND (${start}::text IS NULL OR b.sold_at >= ${start}::timestamp)
-        AND (${end}::text   IS NULL OR b.sold_at <  (${end}::date + INTERVAL '1 day'))
+        AND (${startIso}::timestamptz IS NULL OR b.sold_at >= ${startIso}::timestamptz)
+        AND (${endIso}::timestamptz   IS NULL OR b.sold_at < ${endIso}::timestamptz)
       GROUP BY 1
       ORDER BY 1;
     `;

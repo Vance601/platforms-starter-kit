@@ -3,6 +3,8 @@ import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
 import { ensureSaleTables } from "@/lib/sale-records";
 import { ensureLoggedByDriverColumn } from "@/lib/driver-roles";
+import { addDaysYmd, inclusiveYmdRange, parseReportDate, todayYmd } from "@/lib/org-day-range";
+import { orgTimezone } from "@/lib/org-timezone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -29,18 +31,14 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Date range. Default to the last 30 days if not provided.
-  const startParam = req.nextUrl.searchParams.get("start");
-  const endParam = req.nextUrl.searchParams.get("end");
-
-  const end = endParam ? new Date(endParam) : new Date();
-  const start = startParam
-    ? new Date(startParam)
-    : new Date(new Date().setDate(new Date().getDate() - 30));
-
-  // Normalize to cover the full end day (inclusive).
-  const startISO = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0).toISOString();
-  const endISO = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59).toISOString();
+  // Date range in the org timezone (America/Phoenix unless the org stored another).
+  // Default to the last 30 calendar days if not provided. The end bound is exclusive
+  // midnight after the last day, so late-evening sales are not dropped or doubled.
+  const timeZone = await orgTimezone(user.orgId);
+  const today = todayYmd(timeZone);
+  const startYmd = parseReportDate(req.nextUrl.searchParams.get("start")) || addDaysYmd(today, -30);
+  const endYmd = parseReportDate(req.nextUrl.searchParams.get("end")) || today;
+  const { startIso, endIso } = inclusiveYmdRange(startYmd, endYmd, timeZone);
 
   try {
     // Per-driver SALES: count of sold-movements and warranty subset, in range.
@@ -54,8 +52,8 @@ export async function GET(req: NextRequest) {
       JOIN drivers d ON d.id = m.driver_id
       JOIN batteries b ON b.id = m.battery_id
       WHERE m.to_status = 'sold'
-        AND m.occurred_at >= ${startISO}
-        AND m.occurred_at <= ${endISO}
+        AND m.occurred_at >= ${startIso}
+        AND m.occurred_at < ${endIso}
         AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY d.id, d.name
       ORDER BY units_sold DESC, d.name ASC;
@@ -71,8 +69,8 @@ export async function GET(req: NextRequest) {
       JOIN batteries b ON b.id = m.battery_id
       JOIN battery_types bt ON bt.id = b.battery_type_id
       WHERE m.to_status = 'sold'
-        AND m.occurred_at >= ${startISO}
-        AND m.occurred_at <= ${endISO}
+        AND m.occurred_at >= ${startIso}
+        AND m.occurred_at < ${endIso}
         AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY m.driver_id, bt.name
       ORDER BY m.driver_id, bt.name;
@@ -86,8 +84,8 @@ export async function GET(req: NextRequest) {
       FROM battery_movements m
       JOIN batteries b ON b.id = m.battery_id
       WHERE m.to_status = 'returned_core'
-        AND m.occurred_at >= ${startISO}
-        AND m.occurred_at <= ${endISO}
+        AND m.occurred_at >= ${startIso}
+        AND m.occurred_at < ${endIso}
         AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       GROUP BY m.driver_id;
     `;
@@ -144,8 +142,8 @@ export async function GET(req: NextRequest) {
       ) cr ON true
       LEFT JOIN trucks t ON t.id = m.from_truck_id
       WHERE m.to_status = 'sold'
-        AND m.occurred_at >= ${startISO}
-        AND m.occurred_at <= ${endISO}
+        AND m.occurred_at >= ${startIso}
+        AND m.occurred_at < ${endIso}
         AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY d.name ASC, m.occurred_at DESC;
     `
@@ -184,8 +182,8 @@ export async function GET(req: NextRequest) {
       ) cr ON true
       LEFT JOIN trucks t ON t.id = m.from_truck_id
       WHERE m.to_status = 'sold'
-        AND m.occurred_at >= ${startISO}
-        AND m.occurred_at <= ${endISO}
+        AND m.occurred_at >= ${startIso}
+        AND m.occurred_at < ${endIso}
         AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
       ORDER BY d.name ASC, m.occurred_at DESC;
     `;
@@ -201,7 +199,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      range: { start: startISO, end: endISO },
+      range: { start: startYmd, end: endYmd, timeZone },
       salesByDriver,
       typeByDriver,
       coresByDriver,

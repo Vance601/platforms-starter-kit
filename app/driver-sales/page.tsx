@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
+import { addDaysYmd, DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
 
 type SaleRow = {
   driver_id: string;
@@ -59,12 +60,10 @@ type MergedRow = {
 };
 
 function defaultStart(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return d.toISOString().split("T")[0];
+  return addDaysYmd(todayYmd(DEFAULT_BUSINESS_TIMEZONE), -30);
 }
 function defaultEnd(): string {
-  return new Date().toISOString().split("T")[0];
+  return todayYmd(DEFAULT_BUSINESS_TIMEZONE);
 }
 
 function money(v: string | number | null | undefined): string {

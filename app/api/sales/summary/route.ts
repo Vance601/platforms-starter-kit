@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
+import { inclusiveYmdRange, parseReportDate } from "@/lib/org-day-range";
+import { orgTimezone } from "@/lib/org-timezone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -31,8 +33,8 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const start = searchParams.get("start"); // "YYYY-MM-DD"
-    const end = searchParams.get("end");     // "YYYY-MM-DD"
+    const start = parseReportDate(searchParams.get("start"));
+    const end = parseReportDate(searchParams.get("end"));
 
     if (!start || !end) {
       return NextResponse.json(
@@ -51,7 +53,10 @@ export async function GET(req: Request) {
       });
     }
 
-    // Inclusive range: from start 00:00:00 through end 23:59:59.
+    const timeZone = await orgTimezone(user.orgId);
+    const { startIso, endIso } = inclusiveYmdRange(start, end, timeZone);
+
+    // Inclusive calendar days in the org timezone; endIso is exclusive midnight.
     const { rows } = await sql`
       SELECT
         l.id   AS location_id,
@@ -65,8 +70,8 @@ export async function GET(req: Request) {
       LEFT JOIN battery_models bmod ON bmod.id = b.battery_model_id
       WHERE c.org_id = ${user.orgId}
         AND b.sold_at IS NOT NULL
-        AND b.sold_at >= ${start}::timestamp
-        AND b.sold_at < (${end}::date + INTERVAL '1 day')
+        AND b.sold_at >= ${startIso}::timestamptz
+        AND b.sold_at < ${endIso}::timestamptz
       GROUP BY l.id, l.name, c.name, bmod.code
       ORDER BY l.name NULLS LAST, units_sold DESC;
     `;

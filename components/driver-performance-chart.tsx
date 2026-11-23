@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Calendar, FilterIcon } from "lucide-react"
+import { addDaysYmd, DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range"
 
 interface DriverData {
   id: string
@@ -27,12 +28,8 @@ interface DriverData {
 
 export function DriverPerformanceChart() {
   // Date range state
-  const [startDate, setStartDate] = useState(() => {
-    const date = new Date()
-    date.setMonth(date.getMonth() - 1)
-    return date.toISOString().split("T")[0]
-  })
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0])
+  const [startDate, setStartDate] = useState(() => addDaysYmd(todayYmd(DEFAULT_BUSINESS_TIMEZONE), -30))
+  const [endDate, setEndDate] = useState(() => todayYmd(DEFAULT_BUSINESS_TIMEZONE))
   const [isFiltering, setIsFiltering] = useState(false)
 
   // Sample data - in a real app, this would come from your database

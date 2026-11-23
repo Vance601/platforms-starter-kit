@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
 import Link from "next/link";
 
 type Location = {
@@ -135,7 +136,7 @@ function PickupForm({ locations, suppliers, onDone }: { locations: Location[]; s
   const [locationId, setLocationId] = useState("");
   const [supplier, setSupplier] = useState("");
   const [memoNumber, setMemoNumber] = useState("");
-  const [pickupDate, setPickupDate] = useState(new Date().toISOString().split("T")[0]);
+  const [pickupDate, setPickupDate] = useState(() => todayYmd(DEFAULT_BUSINESS_TIMEZONE));
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<Line[]>([{ model_code: "", raw_description: "", units: 1, other: false }]);
   const [fileObj, setFileObj] = useState<File | null>(null);
@@ -415,7 +416,7 @@ function MemoForm({ locations, pickups }: { locations: Location[]; pickups: Pick
   const [locationId, setLocationId] = useState("");
   const [warrantyPickupId, setWarrantyPickupId] = useState("");
   const [memoNumber, setMemoNumber] = useState("");
-  const [memoDate, setMemoDate] = useState(new Date().toISOString().split("T")[0]);
+  const [memoDate, setMemoDate] = useState(() => todayYmd(DEFAULT_BUSINESS_TIMEZONE));
   const [warrantyCount, setWarrantyCount] = useState("");
   const [coreCharges, setCoreCharges] = useState("");
   const [coreCredits, setCoreCredits] = useState("");

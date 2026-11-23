@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import { getCurrentUser } from '@/lib/current-user';
 import { getCoreLedger, summarizeCores } from '@/lib/core-ledger';
+import { optionalYmdBounds } from '@/lib/org-day-range';
+import { orgTimezone } from '@/lib/org-timezone';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -49,17 +51,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(EMPTY);
   }
 
-  // Date range. Blank/absent = all time.
+  // Date range in the org timezone. Blank/absent = all time.
   const url = new URL(req.url);
-  const fromRaw = url.searchParams.get('from');
-  const toRaw = url.searchParams.get('to');
-  const from = fromRaw && fromRaw.trim() ? fromRaw.trim() : null;
-  const to = toRaw && toRaw.trim() ? toRaw.trim() : null;
+  const timeZone = await orgTimezone(user.orgId);
+  const { startYmd: from, endYmd: to, startIso: fromIso, endIso: toIso } = optionalYmdBounds(
+    url.searchParams.get('from'),
+    url.searchParams.get('to'),
+    timeZone,
+  );
 
   try {
     // Cores still owed, by driver and model, from the shared ledger
     // (lib/core-ledger.ts) so this matches Battery Audit and Driver Reconcile.
-    const ledger = await getCoreLedger(user.orgId, from, to);
+    const ledger = await getCoreLedger(user.orgId, fromIso, toIso);
     const owedMap = new Map<string, { driver_name: string; truck_number: string | null; model_code: string; cores_owed: number }>();
     const owedCores: {
       barcode: string;
@@ -105,8 +109,8 @@ export async function GET(req: NextRequest) {
       FROM core_returns cr
       LEFT JOIN batteries b ON b.id = cr.battery_id
       WHERE cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
-        AND (${from}::timestamp IS NULL OR b.sold_at >= ${from}::timestamp)
-        AND (${to}::timestamp   IS NULL OR b.sold_at <  (${to}::timestamp + INTERVAL '1 day'))
+        AND (${fromIso}::timestamptz IS NULL OR b.sold_at >= ${fromIso}::timestamptz)
+        AND (${toIso}::timestamptz   IS NULL OR b.sold_at < ${toIso}::timestamptz)
       GROUP BY cr.status;
     `;
 
@@ -126,8 +130,8 @@ export async function GET(req: NextRequest) {
       LEFT JOIN drivers d   ON d.id = bm.driver_id
       WHERE cr.status = 'customer_kept'
         AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
-        AND (${from}::timestamp IS NULL OR b.sold_at >= ${from}::timestamp)
-        AND (${to}::timestamp   IS NULL OR b.sold_at <  (${to}::timestamp + INTERVAL '1 day'))
+        AND (${fromIso}::timestamptz IS NULL OR b.sold_at >= ${fromIso}::timestamptz)
+        AND (${toIso}::timestamptz   IS NULL OR b.sold_at < ${toIso}::timestamptz)
       GROUP BY d.name
       ORDER BY deposits DESC, driver_name ASC;
     `;
@@ -143,8 +147,8 @@ export async function GET(req: NextRequest) {
       LEFT JOIN locations l ON l.id = cr.location_id
       WHERE cr.status = 'customer_kept'
         AND cr.company_id IN (SELECT id FROM companies WHERE org_id = ${user.orgId})
-        AND (${from}::timestamp IS NULL OR b.sold_at >= ${from}::timestamp)
-        AND (${to}::timestamp   IS NULL OR b.sold_at <  (${to}::timestamp + INTERVAL '1 day'))
+        AND (${fromIso}::timestamptz IS NULL OR b.sold_at >= ${fromIso}::timestamptz)
+        AND (${toIso}::timestamptz   IS NULL OR b.sold_at < ${toIso}::timestamptz)
       GROUP BY l.name
       ORDER BY deposits DESC, location_name ASC;
     `;

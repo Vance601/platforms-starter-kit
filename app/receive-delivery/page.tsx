@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
 import Link from "next/link";
 
 type Location = {
@@ -28,7 +29,7 @@ export default function ReceiveDeliveryPage() {
   const [locationId, setLocationId] = useState("");
   const [coreCharged, setCoreCharged] = useState("");
   const [coreCredited, setCoreCredited] = useState("");
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split("T")[0]);
+  const [receiptDate, setReceiptDate] = useState(() => todayYmd(DEFAULT_BUSINESS_TIMEZONE));
   const [supplier, setSupplier] = useState("Continental Battery Systems");
 
   const [scanLines, setScanLines] = useState<ScanLine[]>([]);
