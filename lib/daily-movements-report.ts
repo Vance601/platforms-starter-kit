@@ -112,6 +112,11 @@ export function zonedDayRange(ymd: string, timeZone: string): { start: Date; end
   return { start, end: new Date(t2) };
 }
 
+/** Instant used for stock and pending snapshots: end of the report day, or now if the day is still open. */
+export function asOfInstant(end: Date, now = new Date()): Date {
+  return now.getTime() < end.getTime() ? now : end;
+}
+
 async function tableExists(name: string): Promise<boolean> {
   const { rows } = await sql.query(`SELECT to_regclass($1) IS NOT NULL AS exists`, [`public.${name}`]);
   return !!(rows[0] as { exists?: boolean } | undefined)?.exists;
@@ -188,7 +193,7 @@ export async function resolveReportOrgs(
   return { orgs: [], error: `Organization not found: ${orgParam}` };
 }
 
-async function incomingForOrg(orgId: string, startIso: string, endIso: string, timeZone: string) {
+async function incomingForOrg(orgId: string, startIso: string, endIso: string, asOfIso: string, timeZone: string) {
   const { rows } = await sql`
     SELECT
       b.id,
@@ -197,8 +202,8 @@ async function incomingForOrg(orgId: string, startIso: string, endIso: string, t
       COALESCE(b.received_at, b.created_at) AS received_at,
       COALESCE(mdl.code, NULL) AS model_code,
       COALESCE(bt.code, bt.name) AS type_code,
-      l.name AS location_name,
-      t.truck_number,
+      COALESCE(al.name, l.name) AS location_name,
+      at.truck_number,
       rec.name AS received_by,
       dr.supplier,
       dr.po_number,
@@ -208,8 +213,17 @@ async function incomingForOrg(orgId: string, startIso: string, endIso: string, t
     JOIN companies c ON c.id = b.company_id
     LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
     LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
+    LEFT JOIN LATERAL (
+      SELECT mm.to_truck_id, mm.to_location_id
+      FROM battery_movements mm
+      WHERE mm.battery_id = b.id
+        AND mm.occurred_at < ${asOfIso}::timestamptz
+      ORDER BY mm.occurred_at DESC, mm.id DESC
+      LIMIT 1
+    ) asof ON true
     LEFT JOIN locations l ON l.id = b.location_id
-    LEFT JOIN trucks t ON t.id = COALESCE(b.current_truck_id, b.truck_id)
+    LEFT JOIN locations al ON al.id = asof.to_location_id
+    LEFT JOIN trucks at ON at.id = asof.to_truck_id
     LEFT JOIN delivery_receipts dr ON dr.id = b.delivery_receipt_id
     LEFT JOIN mbs_invoices inv ON inv.id = b.mbs_invoice_id
     LEFT JOIN LATERAL (
@@ -251,7 +265,7 @@ async function incomingForOrg(orgId: string, startIso: string, endIso: string, t
   };
 }
 
-async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZone: string, hasSales: boolean) {
+async function soldForOrg(orgId: string, startIso: string, endIso: string, asOfIso: string, timeZone: string, hasSales: boolean) {
   await ensureLoggedByDriverColumn();
   const { rows } = hasSales
     ? await sql`
@@ -268,10 +282,9 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
         COALESCE(ld.name, NULL) AS logged_by_name,
         t.truck_number,
         CASE
-          WHEN b.status = 'returned_core' OR cr.has_returned THEN 'returned'
-          WHEN cr.has_kept THEN 'customer_kept'
-          WHEN cr.has_owed OR b.status = 'sold' THEN 'owed'
-          ELSE COALESCE(cr.status, 'owed')
+          WHEN retmv.occurred_at IS NOT NULL OR COALESCE(cr.has_returned, false) THEN 'returned'
+          WHEN COALESCE(cr.has_kept, false) THEN 'customer_kept'
+          ELSE 'owed'
         END AS core_status
       FROM batteries b
       JOIN companies c ON c.id = b.company_id
@@ -297,12 +310,25 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
       ) s ON true
       LEFT JOIN LATERAL (
         SELECT
-          bool_or(c.status = 'returned') AS has_returned,
-          bool_or(c.status = 'customer_kept') AS has_kept,
-          bool_or(c.status = 'owed' OR c.status IS NULL) AS has_owed,
-          (ARRAY_AGG(c.status ORDER BY c.returned_at DESC NULLS LAST))[1] AS status
+          bool_or(
+            c.status = 'returned'
+            AND COALESCE(c.returned_at, ${asOfIso}::timestamptz) < ${asOfIso}::timestamptz
+          ) AS has_returned,
+          bool_or(
+            c.status = 'customer_kept'
+            AND (c.returned_at IS NULL OR c.returned_at < ${asOfIso}::timestamptz)
+          ) AS has_kept
         FROM core_returns c WHERE c.battery_id = b.id
       ) cr ON true
+      LEFT JOIN LATERAL (
+        SELECT mm.occurred_at
+        FROM battery_movements mm
+        WHERE mm.battery_id = b.id
+          AND mm.to_status = 'returned_core'
+          AND mm.occurred_at < ${asOfIso}::timestamptz
+        ORDER BY mm.occurred_at DESC, mm.id DESC
+        LIMIT 1
+      ) retmv ON true
       WHERE c.org_id = ${orgId}
         AND b.sold_at IS NOT NULL
         AND b.sold_at >= ${startIso}::timestamptz
@@ -322,10 +348,9 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
         COALESCE(ld.name, NULL) AS logged_by_name,
         t.truck_number,
         CASE
-          WHEN b.status = 'returned_core' OR cr.has_returned THEN 'returned'
-          WHEN cr.has_kept THEN 'customer_kept'
-          WHEN cr.has_owed OR b.status = 'sold' THEN 'owed'
-          ELSE COALESCE(cr.status, 'owed')
+          WHEN retmv.occurred_at IS NOT NULL OR COALESCE(cr.has_returned, false) THEN 'returned'
+          WHEN COALESCE(cr.has_kept, false) THEN 'customer_kept'
+          ELSE 'owed'
         END AS core_status
       FROM batteries b
       JOIN companies c ON c.id = b.company_id
@@ -344,12 +369,25 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
       LEFT JOIN trucks t ON t.id = sm.from_truck_id
       LEFT JOIN LATERAL (
         SELECT
-          bool_or(c.status = 'returned') AS has_returned,
-          bool_or(c.status = 'customer_kept') AS has_kept,
-          bool_or(c.status = 'owed' OR c.status IS NULL) AS has_owed,
-          (ARRAY_AGG(c.status ORDER BY c.returned_at DESC NULLS LAST))[1] AS status
+          bool_or(
+            c.status = 'returned'
+            AND COALESCE(c.returned_at, ${asOfIso}::timestamptz) < ${asOfIso}::timestamptz
+          ) AS has_returned,
+          bool_or(
+            c.status = 'customer_kept'
+            AND (c.returned_at IS NULL OR c.returned_at < ${asOfIso}::timestamptz)
+          ) AS has_kept
         FROM core_returns c WHERE c.battery_id = b.id
       ) cr ON true
+      LEFT JOIN LATERAL (
+        SELECT mm.occurred_at
+        FROM battery_movements mm
+        WHERE mm.battery_id = b.id
+          AND mm.to_status = 'returned_core'
+          AND mm.occurred_at < ${asOfIso}::timestamptz
+        ORDER BY mm.occurred_at DESC, mm.id DESC
+        LIMIT 1
+      ) retmv ON true
       WHERE c.org_id = ${orgId}
         AND b.sold_at IS NOT NULL
         AND b.sold_at >= ${startIso}::timestamptz
@@ -386,7 +424,7 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
   };
 }
 
-async function coresForOrg(orgId: string, startIso: string, endIso: string, timeZone: string, soldItems: { barcode: string; time: string | null; timeLocal: string | null; model: string | null; type: string | null; location: string | null; truck: string | null; driver: string | null; callNumber: string | null; coreStatus: string; isWarranty: boolean }[]) {
+async function coresForOrg(orgId: string, startIso: string, endIso: string, asOfIso: string, timeZone: string, soldItems: { barcode: string; time: string | null; timeLocal: string | null; model: string | null; type: string | null; location: string | null; truck: string | null; driver: string | null; callNumber: string | null; coreStatus: string; isWarranty: boolean }[]) {
   const collectedItems = soldItems.map((s) => ({
     time: s.time,
     timeLocal: s.timeLocal,
@@ -427,8 +465,8 @@ async function coresForOrg(orgId: string, startIso: string, endIso: string, time
       COALESCE(bt.code, bt.name) AS type_code,
       COALESCE(l.name, NULL) AS location_name,
       CASE
-        WHEN s.status = 'returned_core' OR cr.has_returned THEN 'returned'
-        WHEN cr.has_kept THEN 'customer_kept'
+        WHEN retmv.occurred_at IS NOT NULL OR COALESCE(cr.has_returned, false) THEN 'returned'
+        WHEN COALESCE(cr.has_kept, false) THEN 'customer_kept'
         ELSE 'owed'
       END AS core_status
     FROM sold s
@@ -439,26 +477,43 @@ async function coresForOrg(orgId: string, startIso: string, endIso: string, time
     ) sm ON true
     LEFT JOIN trucks t ON t.id = sm.from_truck_id
     LEFT JOIN LATERAL (
-      SELECT bool_or(c.status = 'returned') AS has_returned,
-             bool_or(c.status = 'customer_kept') AS has_kept
+      SELECT bool_or(
+               c.status = 'returned'
+               AND COALESCE(c.returned_at, ${asOfIso}::timestamptz) < ${asOfIso}::timestamptz
+             ) AS has_returned,
+             bool_or(
+               c.status = 'customer_kept'
+               AND (c.returned_at IS NULL OR c.returned_at < ${asOfIso}::timestamptz)
+             ) AS has_kept
       FROM core_returns c WHERE c.battery_id = s.id
     ) cr ON true
+    LEFT JOIN LATERAL (
+      SELECT mm.occurred_at
+      FROM battery_movements mm
+      WHERE mm.battery_id = s.id
+        AND mm.to_status = 'returned_core'
+        AND mm.occurred_at < ${asOfIso}::timestamptz
+      ORDER BY mm.occurred_at DESC, mm.id DESC
+      LIMIT 1
+    ) retmv ON true
     LEFT JOIN drivers d ON d.id = sm.driver_id
     LEFT JOIN battery_models mdl ON mdl.id = s.battery_model_id
     LEFT JOIN battery_types bt ON bt.id = s.battery_type_id
     LEFT JOIN locations l ON l.id = s.location_id
-    WHERE s.status = 'sold'
+    WHERE s.sold_at < ${asOfIso}::timestamptz
+      AND retmv.occurred_at IS NULL
       AND NOT COALESCE(cr.has_returned, false)
       AND NOT COALESCE(cr.has_kept, false)
     ORDER BY s.sold_at ASC NULLS LAST, s.barcode`;
 
-  const agedCutoff = new Date(Date.parse(startIso) - 7 * 24 * 60 * 60 * 1000);
+  const asOfMs = Date.parse(asOfIso);
+  const agedCutoff = new Date(asOfMs - 7 * 24 * 60 * 60 * 1000);
   const pendingItems = pendingRows
     .filter((r) => r.core_status === "owed")
     .map((r) => {
       const soldAt = r.sold_at ? new Date(String(r.sold_at)) : null;
       const ageDays = soldAt && !Number.isNaN(soldAt.getTime())
-        ? Math.floor((Date.parse(startIso) + 24 * 60 * 60 * 1000 - 1 - soldAt.getTime()) / (24 * 60 * 60 * 1000))
+        ? Math.floor((asOfMs - 1 - soldAt.getTime()) / (24 * 60 * 60 * 1000))
         : null;
       return {
         time: iso(r.sold_at),
@@ -752,23 +807,32 @@ async function transfersForOrg(orgId: string, startIso: string, endIso: string, 
   return { count: items.length, items };
 }
 
-async function inventoryForOrg(orgId: string) {
+async function inventoryForOrg(orgId: string, asOfIso: string) {
   const { rows } = await sql`
     SELECT
       l.name AS location_name,
       t.truck_number,
       COALESCE(mdl.code, bt.code, bt.name, 'Unknown') AS size_code,
-      b.status::text AS status,
+      COALESCE(asof.to_status, 'in_warehouse')::text AS status,
       COUNT(*)::int AS n
     FROM batteries b
     JOIN companies c ON c.id = b.company_id
-    LEFT JOIN locations l ON l.id = b.location_id
-    LEFT JOIN trucks t ON t.id = COALESCE(b.current_truck_id, b.truck_id)
+    LEFT JOIN LATERAL (
+      SELECT mm.to_status, mm.to_truck_id, mm.to_location_id
+      FROM battery_movements mm
+      WHERE mm.battery_id = b.id
+        AND mm.occurred_at < ${asOfIso}::timestamptz
+      ORDER BY mm.occurred_at DESC, mm.id DESC
+      LIMIT 1
+    ) asof ON true
+    LEFT JOIN locations l ON l.id = COALESCE(asof.to_location_id, b.location_id)
+    LEFT JOIN trucks t ON t.id = asof.to_truck_id
     LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
     LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
     WHERE c.org_id = ${orgId}
-      AND b.status IN ('in_warehouse', 'on_truck')
-    GROUP BY l.name, t.truck_number, COALESCE(mdl.code, bt.code, bt.name, 'Unknown'), b.status
+      AND COALESCE(b.received_at, b.created_at) < ${asOfIso}::timestamptz
+      AND COALESCE(asof.to_status, 'in_warehouse') IN ('in_warehouse', 'on_truck')
+    GROUP BY l.name, t.truck_number, COALESCE(mdl.code, bt.code, bt.name, 'Unknown'), COALESCE(asof.to_status, 'in_warehouse')
     ORDER BY l.name NULLS LAST, t.truck_number NULLS LAST, size_code`;
 
   const byLocation = new Map<string, number>();
@@ -806,7 +870,7 @@ async function inventoryForOrg(orgId: string) {
     total,
     inWarehouse,
     onTruck,
-    note: "Totals count only available-to-sell stock (status in_warehouse or on_truck).",
+    note: "Available-to-sell stock (in_warehouse or on_truck) as of the report instant: end of the report day in the org timezone, or now if that day is still in progress. Grouped by battery model/size, not by family (AGM/Alpha/Bravo).",
     byLocation: [...byLocation.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
     bySize: [...bySize.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
     byLocationAndSize,
@@ -820,13 +884,16 @@ export async function buildOrgDailyReport(org: ReportOrg, dateYmd: string) {
   const { start, end } = zonedDayRange(dateYmd, timeZone);
   const startIso = start.toISOString();
   const endIso = end.toISOString();
+  const asOf = asOfInstant(end);
+  const asOfIso = asOf.toISOString();
+  const dayIsOpen = asOf.getTime() < end.getTime();
   const hasSales = await tableExists("sales");
 
-  const incoming = await incomingForOrg(org.id, startIso, endIso, timeZone);
-  const sold = await soldForOrg(org.id, startIso, endIso, timeZone, hasSales);
-  const cores = await coresForOrg(org.id, startIso, endIso, timeZone, sold.items);
+  const incoming = await incomingForOrg(org.id, startIso, endIso, asOfIso, timeZone);
+  const sold = await soldForOrg(org.id, startIso, endIso, asOfIso, timeZone, hasSales);
+  const cores = await coresForOrg(org.id, startIso, endIso, asOfIso, timeZone, sold.items);
   const transfers = await transfersForOrg(org.id, startIso, endIso, timeZone);
-  const inventory = await inventoryForOrg(org.id);
+  const inventory = await inventoryForOrg(org.id, asOfIso);
 
   return {
     org,
@@ -837,7 +904,16 @@ export async function buildOrgDailyReport(org: ReportOrg, dateYmd: string) {
       end: endIso,
       startLocal: formatLocal(start, timeZone),
       endLocal: formatLocal(end, timeZone),
+      asOf: asOfIso,
+      asOfLocal: formatLocal(asOf, timeZone),
+      snapshot: dayIsOpen ? "as_of_now" : "end_of_day",
     },
+    notes: [
+      "Incoming, sold, transfers, and core returns are events during this calendar day in the org timezone.",
+      "Cores collected is one row per sale that day (including warranty). A customer_kept status means no core is coming back.",
+      "Cores returned are cores physically returned that day, including cores from earlier sales.",
+      "Cores pending and available stock are snapshots as of the end of the day, or as of now if the day is still in progress. They are not live totals taken at report run time on a later day.",
+    ],
     incoming,
     sold,
     cores,
