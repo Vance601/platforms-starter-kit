@@ -7,6 +7,7 @@ import { sql } from "@vercel/postgres";
 import { getOrgSettings } from "@/lib/org-settings";
 import { resolveDuggersOrg } from "@/lib/duggers-inventory-reset";
 import { normalizeOrgSlug } from "@/lib/org-slug";
+import { ensureLoggedByDriverColumn } from "@/lib/driver-roles";
 
 export type ReportOrg = {
   id: string;
@@ -251,6 +252,7 @@ async function incomingForOrg(orgId: string, startIso: string, endIso: string, t
 }
 
 async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZone: string, hasSales: boolean) {
+  await ensureLoggedByDriverColumn();
   const { rows } = hasSales
     ? await sql`
       SELECT
@@ -263,6 +265,7 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
         l.name AS location_name,
         sm.driver_id,
         COALESCE(d.name, NULL) AS driver_name,
+        COALESCE(ld.name, NULL) AS logged_by_name,
         t.truck_number,
         CASE
           WHEN b.status = 'returned_core' OR cr.has_returned THEN 'returned'
@@ -276,13 +279,14 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN locations l ON l.id = b.location_id
       LEFT JOIN LATERAL (
-        SELECT m.driver_id, m.from_truck_id, m.call_reference
+        SELECT m.driver_id, m.from_truck_id, m.call_reference, m.logged_by_driver_id
         FROM battery_movements m
         WHERE m.battery_id = b.id AND m.to_status = 'sold'
         ORDER BY m.occurred_at DESC
         LIMIT 1
       ) sm ON true
       LEFT JOIN drivers d ON d.id = sm.driver_id
+      LEFT JOIN drivers ld ON ld.id = sm.logged_by_driver_id
       LEFT JOIN trucks t ON t.id = sm.from_truck_id
       LEFT JOIN LATERAL (
         SELECT sale_amount, quickbooks_invoice_id, towbook_call_number
@@ -315,6 +319,7 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
         l.name AS location_name,
         sm.driver_id,
         COALESCE(d.name, NULL) AS driver_name,
+        COALESCE(ld.name, NULL) AS logged_by_name,
         t.truck_number,
         CASE
           WHEN b.status = 'returned_core' OR cr.has_returned THEN 'returned'
@@ -328,13 +333,14 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN locations l ON l.id = b.location_id
       LEFT JOIN LATERAL (
-        SELECT m.driver_id, m.from_truck_id, m.call_reference
+        SELECT m.driver_id, m.from_truck_id, m.call_reference, m.logged_by_driver_id
         FROM battery_movements m
         WHERE m.battery_id = b.id AND m.to_status = 'sold'
         ORDER BY m.occurred_at DESC
         LIMIT 1
       ) sm ON true
       LEFT JOIN drivers d ON d.id = sm.driver_id
+      LEFT JOIN drivers ld ON ld.id = sm.logged_by_driver_id
       LEFT JOIN trucks t ON t.id = sm.from_truck_id
       LEFT JOIN LATERAL (
         SELECT
@@ -361,6 +367,7 @@ async function soldForOrg(orgId: string, startIso: string, endIso: string, timeZ
     location: (r.location_name as string) || null,
     truck: (r.truck_number as string) || null,
     driver: (r.driver_name as string) || null,
+    loggedBy: (r.logged_by_name as string) || null,
     callNumber: (r.call_number as string) || null,
     invoiceNumber: (r.quickbooks_invoice_id as string) || null,
     // saleAmount is retail only when a sales-table row exists (often unused).
@@ -877,7 +884,7 @@ export function dailyMovementsToCsv(payload: Awaited<ReturnType<typeof buildDail
   const lines: string[] = [];
   const header = [
     "org_slug", "org_name", "date", "section", "time_local", "barcode", "serial",
-    "model", "type", "qty", "location", "truck", "driver_or_actor", "call_or_invoice",
+    "model", "type", "qty", "location", "truck", "driver_or_actor", "logged_by", "call_or_invoice",
     "core_status", "amount", "notes",
   ];
   lines.push(header.join(","));
@@ -888,6 +895,7 @@ export function dailyMovementsToCsv(payload: Awaited<ReturnType<typeof buildDail
       item.timeLocal, item.barcode, item.serialNumber, item.model, item.type,
       item.qty ?? 1, item.location, item.truck,
       item.driver || item.actor || item.receivedBy || "",
+      item.loggedBy || "",
       item.callNumber || item.invoiceNumber || item.receiptNumber || item.poNumber || "",
       item.coreStatus || item.kind || "",
       item.saleAmount ?? item.wholesaleCost ?? item.refundAmount ?? item.creditAmount ?? "",

@@ -25,6 +25,7 @@ export default function DriverMovePage() {
   const [error, setError] = useState("");
   const [flash, setFlash] = useState("");
   const [claimed, setClaimed] = useState<{ id: string; truck_number: string } | null>(null);
+  const [isWarehouse, setIsWarehouse] = useState(false);
   const [batteries, setBatteries] = useState<Battery[]>([]);
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [locations, setLocations] = useState<Loc[]>([]);
@@ -54,6 +55,7 @@ export default function DriverMovePage() {
         return;
       }
       setClaimed(data.claimedTruck || null);
+      setIsWarehouse(!!data.isWarehouse);
       setBatteries(data.batteries || []);
       setTrucks(data.trucks || []);
       setLocations(data.locations || []);
@@ -77,7 +79,7 @@ export default function DriverMovePage() {
   function handleScan(code: string) {
     const match = findScannedItem(batteries, code);
     if (!match) {
-      setScanMsg(`${code} is not on your truck.`);
+      setScanMsg(isWarehouse ? `${code} is not on a truck in this list.` : `${code} is not on your truck.`);
       return;
     }
     setScanMsg(null);
@@ -89,7 +91,7 @@ export default function DriverMovePage() {
 
   async function submit() {
     if (!selectedId) {
-      setError("Pick a battery on your truck.");
+      setError(isWarehouse ? "Pick a battery to move." : "Pick a battery on your truck.");
       return;
     }
     if (destKind === "truck" && !toTruckId) {
@@ -132,7 +134,10 @@ export default function DriverMovePage() {
     }
   }
 
-  const otherTrucks = trucks.filter((t) => t.id !== claimed?.id);
+  const selectedTruckId = batteries.find((b) => b.id === selectedId)?.truck_id || claimed?.id;
+  const otherTrucks = trucks.filter((t) => t.id !== selectedTruckId);
+  const canOperate = isWarehouse || !!claimed;
+
   const wrap: React.CSSProperties = {
     minHeight: "100vh",
     background: "#0f172a",
@@ -158,18 +163,22 @@ export default function DriverMovePage() {
         <DriverNav />
         <h1 style={{ fontSize: 24, marginBottom: 4 }}>Move a battery</h1>
         <p style={{ color: "#94a3b8", marginBottom: 16, fontSize: 14 }}>
-          Take a battery off your truck and send it to another truck, or return it to the warehouse.
+          {isWarehouse
+            ? "Move a battery from any truck to another truck, or return it to the warehouse. You do not need to claim the truck."
+            : "Take a battery off your truck and send it to another truck, or return it to the warehouse."}
         </p>
 
-        {!loading && !error && !claimed ? (
+        {!loading && !error && !canOperate ? (
           <div style={{ background: "#1e293b", borderRadius: 12, padding: 16, marginBottom: 16, color: "#fcd34d" }}>
             Claim a truck first (Truck tab), then come back here to move stock.
           </div>
         ) : null}
 
-        {claimed ? (
+        {canOperate ? (
           <p style={{ fontSize: 14, color: "#cbd5e1", marginBottom: 12 }}>
-            On truck #{claimed.truck_number}: {batteries.length} batter{batteries.length === 1 ? "y" : "ies"}
+            {isWarehouse
+              ? `On trucks: ${batteries.length} batter${batteries.length === 1 ? "y" : "ies"}`
+              : `On truck #${claimed?.truck_number}: ${batteries.length} batter${batteries.length === 1 ? "y" : "ies"}`}
           </p>
         ) : null}
 
@@ -184,7 +193,7 @@ export default function DriverMovePage() {
           </div>
         ) : null}
 
-        {claimed ? (
+        {canOperate ? (
           <div style={{ marginBottom: 16 }}>
             <BarcodeReader onScan={handleScan} label="Scan a battery on your truck" />
             {scanMsg ? <p style={{ color: "#fca5a5", fontSize: 13, marginTop: 8 }}>{scanMsg}</p> : null}
@@ -272,7 +281,7 @@ export default function DriverMovePage() {
         </button>
 
         {loading ? <div style={{ color: "#94a3b8" }}>Loading…</div> : null}
-        {!loading && claimed && batteries.length === 0 ? (
+        {!loading && canOperate && batteries.length === 0 ? (
           <div style={{ color: "#94a3b8", background: "#1e293b", borderRadius: 12, padding: 16 }}>
             No batteries on this truck to move.
           </div>
@@ -296,6 +305,9 @@ export default function DriverMovePage() {
                   }}
                 >
                   <div style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600 }}>{b.barcode}</div>
+                  {b.truck_number ? (
+                    <div style={{ fontSize: 12, color: "#94a3b8" }}>Truck #{b.truck_number}{b.model_code ? ` · ${b.model_code}` : ""}</div>
+                  ) : null}
                   <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 2 }}>
                     {b.model_code || "Battery"}
                     {b.location_name ? ` · from ${b.location_name}` : ""}

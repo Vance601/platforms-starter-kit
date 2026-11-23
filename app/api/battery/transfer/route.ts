@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import crypto from "crypto";
 import { getCurrentUser } from "@/lib/current-user";
+import { getDriverContext } from "@/lib/driver-session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -39,30 +40,23 @@ function publicError(err: unknown): string {
 }
 
 type Actor =
-  | { kind: "driver"; driverId: string; driverName: string; companyId: string; claimedTruckId: string | null }
+  | { kind: "driver"; driverId: string; driverName: string; companyId: string; claimedTruckId: string | null; isWarehouse: boolean }
   | { kind: "staff"; userId: string; orgId: string; actorName: string };
 
 async function resolveActor(req: NextRequest): Promise<
   { ok: true; actor: Actor } | { ok: false; res: NextResponse }
 > {
-  const driverId = verifyDriverSession(req.cookies.get("driver_session")?.value);
-  if (driverId) {
-    const { rows: driverRows } = await sql`
-      SELECT id, name, company_id FROM drivers WHERE id = ${driverId} AND active = TRUE LIMIT 1;`;
-    if (!driverRows.length) {
-      return { ok: false, res: NextResponse.json({ success: false, error: "Driver not found." }, { status: 404 }) };
-    }
-    const d = driverRows[0];
-    const { rows: truckRows } = await sql`
-      SELECT id FROM trucks WHERE current_driver_id = ${driverId} LIMIT 1;`;
+  const ctx = await getDriverContext(req);
+  if (ctx) {
     return {
       ok: true,
       actor: {
         kind: "driver",
-        driverId: d.id,
-        driverName: d.name,
-        companyId: d.company_id,
-        claimedTruckId: truckRows[0]?.id ?? null,
+        driverId: ctx.driverId,
+        driverName: ctx.name,
+        companyId: ctx.companyId,
+        claimedTruckId: ctx.truckId,
+        isWarehouse: ctx.isWarehouse,
       },
     };
   }
@@ -100,7 +94,21 @@ export async function GET(req: NextRequest) {
       // dropdowns and a false "claim a truck first" message.
       let batteries: Record<string, unknown>[] = [];
       let claimed: Record<string, unknown> | null = null;
-      if (actor.claimedTruckId) {
+      if (actor.isWarehouse) {
+        const { rows: batRows } = await sql`
+          SELECT b.id, b.barcode, b.serial_number, b.status, b.location_id,
+                 b.truck_id, t.truck_number, l.name AS location_name,
+                 COALESCE(mdl.code, '') AS model_code
+          FROM batteries b
+          JOIN trucks t ON t.id = b.truck_id
+          LEFT JOIN locations l ON l.id = b.location_id
+          LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
+          WHERE b.status = 'on_truck'
+            AND b.truck_id IS NOT NULL
+            AND b.company_id = ${actor.companyId}
+          ORDER BY t.truck_number, b.barcode;`;
+        batteries = batRows;
+      } else if (actor.claimedTruckId) {
         const { rows: batRows } = await sql`
           SELECT b.id, b.barcode, b.serial_number, b.status, b.location_id,
                  b.truck_id, t.truck_number, l.name AS location_name,
@@ -132,6 +140,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         role: "driver",
+        isWarehouse: actor.isWarehouse,
         claimedTruck: claimed,
         batteries,
         trucks,
@@ -183,7 +192,7 @@ export async function POST(req: NextRequest) {
     const { actor } = r;
 
     const body = await req.json().catch(() => ({}));
-    if (actor.kind === "driver" && !actor.claimedTruckId) {
+    if (actor.kind === "driver" && !actor.isWarehouse && !actor.claimedTruckId) {
       return NextResponse.json(
         { success: false, error: "You haven't claimed a truck yet. Claim a truck first, then move batteries." },
         { status: 409 },
@@ -216,7 +225,13 @@ export async function POST(req: NextRequest) {
       if (battery.company_id !== actor.companyId) {
         return NextResponse.json({ success: false, error: "That battery belongs to a different company." }, { status: 403 });
       }
-      if (battery.status !== "on_truck" || battery.truck_id !== actor.claimedTruckId) {
+      if (battery.status !== "on_truck" || !battery.truck_id) {
+        return NextResponse.json(
+          { success: false, error: "That battery is not on a truck." },
+          { status: 409 },
+        );
+      }
+      if (!actor.isWarehouse && battery.truck_id !== actor.claimedTruckId) {
         return NextResponse.json(
           { success: false, error: "That battery is not on the truck you have claimed." },
           { status: 409 },

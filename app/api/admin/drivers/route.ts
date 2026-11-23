@@ -10,6 +10,7 @@ import { sql } from "@vercel/postgres";
 import { getCurrentUser, type CurrentUser } from "@/lib/current-user";
 import crypto from "crypto";
 import { logAudit } from "@/lib/audit";
+import { ensureDriverWarehouseFlag, truthyFlag } from "@/lib/driver-roles";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -58,10 +59,12 @@ export async function GET() {
   const { orgId } = gate.user;
 
   try {
+    await ensureDriverWarehouseFlag();
     const { rows: drivers } = await sql`
       SELECT drivers.id,
              drivers.name,
              drivers.active,
+             COALESCE(drivers.is_warehouse, FALSE) AS is_warehouse,
              companies.slug AS company
       FROM drivers
       JOIN companies ON companies.id = drivers.company_id
@@ -84,6 +87,7 @@ export async function GET() {
 
     const result = drivers.map((d) => ({
       ...d,
+      isWarehouse: truthyFlag(d.is_warehouse),
       onShiftTruck: shiftMap[d.id] ?? null,
     }));
 
@@ -144,7 +148,7 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH - edit name/company, toggle active, or reset PIN.
-// body.action: "edit" | "toggleActive" | "resetPin"
+// body.action: "edit" | "toggleActive" | "resetPin" | "setPin" | "setWarehouse"
 export async function PATCH(req: NextRequest) {
   const gate = await requireManager();
   if (!gate.ok) return gate.res;
@@ -275,6 +279,33 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "PIN reset to 0000 - driver sets a new one at next login",
+      });
+    }
+
+    if (action === "setWarehouse") {
+      const isWarehouse = body.isWarehouse === true;
+      const { rows } = await sql`
+        UPDATE drivers SET is_warehouse = ${isWarehouse}
+        WHERE id = ${driverId}
+        RETURNING id, name, is_warehouse;
+      `;
+      if (rows.length === 0) return NOT_FOUND;
+      await logAudit({
+        action: "driver.set_warehouse",
+        actorType: "user",
+        actorId: gate.user.userId,
+        orgId,
+        entityType: "driver",
+        entityId: rows[0].id,
+        details: { driverName: rows[0].name, isWarehouse },
+        req,
+      });
+      return NextResponse.json({
+        success: true,
+        message: isWarehouse
+          ? `${rows[0].name} is now warehouse staff`
+          : `${rows[0].name} is now a route driver`,
+        isWarehouse,
       });
     }
 

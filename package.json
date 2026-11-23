@@ -12,7 +12,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "smoke": "node scripts/smoke.mjs",
-    "test:scan": "npx --yes tsx scripts/verify-scan.ts"
+    "test:scan": "npx --yes tsx scripts/verify-scan.ts",
+    "test:warehouse": "npx --yes tsx scripts/verify-warehouse-sales.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

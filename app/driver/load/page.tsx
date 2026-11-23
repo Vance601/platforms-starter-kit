@@ -24,6 +24,7 @@ type LoadableResponse = {
   driver?: { id: string; name: string; company_id: string };
   claimedTruck?: ClaimedTruck;
   batteries?: Battery[];
+  isWarehouse?: boolean;
 };
 
 export default function DriverLoadPage() {
@@ -39,6 +40,7 @@ export default function DriverLoadPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isWarehouse, setIsWarehouse] = useState(false);
 
   // Last scan result. highlightId drives the visual pulse on the matched row;
   // scanMsg reports a barcode that is not in this warehouse list.
@@ -92,6 +94,7 @@ export default function DriverLoadPage() {
       setDriverName(data.driver?.name || "");
       setClaimedTruck(data.claimedTruck || null);
       setBatteries(data.batteries || []);
+      setIsWarehouse(!!data.isWarehouse);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -188,8 +191,20 @@ export default function DriverLoadPage() {
             ) : null}
           </div>
 
-          {/* Claimed truck banner */}
-          {claimedTruck ? (
+          {isWarehouse ? (
+            <div className="rounded-lg border border-emerald-700 bg-emerald-950/30 px-4 py-3">
+              <p className="font-semibold text-emerald-300">Use Transfer to load trucks</p>
+              <p className="text-sm text-emerald-200/80">
+                Warehouse staff: use Transfer to move batteries onto a truck without claiming it. This is a transfer, not a sale.
+              </p>
+              <button
+                onClick={() => router.push("/driver/transfer")}
+                className="mt-2 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white"
+              >
+                Go to Transfer
+              </button>
+            </div>
+          ) : claimedTruck ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3">
               <p className="text-sm text-slate-400">Loading onto</p>
               <p className="text-lg font-semibold">
