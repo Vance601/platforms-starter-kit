@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
 
 type Warranty = {
   id: string;
@@ -24,7 +25,7 @@ function fmtDate(iso: string | null): string {
   if (!iso) return "-";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "-";
-  return d.toISOString().split("T")[0];
+  return todayYmd(DEFAULT_BUSINESS_TIMEZONE, d);
 }
 
 export default function WarrantyReportPage() {
@@ -119,7 +120,7 @@ export default function WarrantyReportPage() {
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayYmd(DEFAULT_BUSINESS_TIMEZONE);
     link.href = url;
     link.setAttribute("download", `mbs-warranty-claim-${today}.csv`);
     document.body.appendChild(link);

@@ -1,8 +1,9 @@
-import { getOrgSettings } from "@/lib/org-settings";
 import { NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
 import { normalizeBatteryType } from "@/lib/battery-types";
+import { optionalYmdBounds } from "@/lib/org-day-range";
+import { orgTimezone } from "@/lib/org-timezone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -20,8 +21,12 @@ export async function GET(req: Request) {
   if (!user.orgId) return NextResponse.json({ success: true, sales: [] });
 
   const { searchParams } = new URL(req.url);
-  const start = searchParams.get("start") || null;
-  const end = searchParams.get("end") || null;
+  const timeZone = await orgTimezone(user.orgId);
+  const { startIso, endIso } = optionalYmdBounds(
+    searchParams.get("start"),
+    searchParams.get("end"),
+    timeZone,
+  );
 
   try {
     const { rows } = await sql`
@@ -47,15 +52,14 @@ export async function GET(req: Request) {
       LEFT JOIN drivers d ON d.id = sm.driver_id
       WHERE c.org_id = ${user.orgId}
         AND b.sold_at IS NOT NULL
-        AND (${start}::timestamp IS NULL OR b.sold_at >= ${start}::timestamp)
-        AND (${end}::timestamp IS NULL OR b.sold_at < (${end}::date + INTERVAL '1 day'))
+        AND (${startIso}::timestamptz IS NULL OR b.sold_at >= ${startIso}::timestamptz)
+        AND (${endIso}::timestamptz IS NULL OR b.sold_at < ${endIso}::timestamptz)
       ORDER BY b.sold_at DESC;
     `;
 
-    const { timezone } = await getOrgSettings(user.orgId);
     const sales = rows.map((r) => ({
       id: r.barcode as string,
-      date: new Date(r.sold_at).toLocaleDateString("en-CA", { timeZone: timezone }),
+      date: new Date(r.sold_at).toLocaleDateString("en-CA", { timeZone }),
       batteryType: normalizeBatteryType(r.battery_type),
       model: r.model_code ?? null,
       quantity: 1,

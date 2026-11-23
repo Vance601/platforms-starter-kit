@@ -28,8 +28,8 @@ export interface CoreLedgerRow {
 
 export async function getCoreLedger(
   orgId: string,
-  from: string | null = null,
-  to: string | null = null
+  fromIso: string | null = null,
+  toIsoExclusive: string | null = null
 ): Promise<CoreLedgerRow[]> {
   const { rows } = await sql`
     WITH sold AS (
@@ -41,8 +41,8 @@ export async function getCoreLedger(
         AND (b.status IN ('sold', 'returned_core')
              OR EXISTS (SELECT 1 FROM battery_movements m
                         WHERE m.battery_id = b.id AND m.to_status = 'sold'))
-        AND (${from}::timestamp IS NULL OR b.sold_at >= ${from}::timestamp)
-        AND (${to}::timestamp   IS NULL OR b.sold_at <  (${to}::timestamp + INTERVAL '1 day'))
+        AND (${fromIso}::timestamptz IS NULL OR b.sold_at >= ${fromIso}::timestamptz)
+        AND (${toIsoExclusive}::timestamptz IS NULL OR b.sold_at < ${toIsoExclusive}::timestamptz)
     )
     SELECT
       s.id AS battery_id,
