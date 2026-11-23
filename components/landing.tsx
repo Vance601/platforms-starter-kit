@@ -5,6 +5,7 @@ import DemoLeadForm from "@/components/demo-lead-form";
 import Image from "next/image";
 import BrandLogo from "@/components/brand-logo";
 import AdVideo from "@/components/ad-video";
+import SiteFooter from "@/components/site-footer";
 
 // Public landing page for signed-out visitors at "/". Rendered as a full-screen
 // layer so the staff sidebar from the app shell is not shown.
@@ -90,6 +91,7 @@ export default function Landing() {
           ))}
         </div>
       </main>
+      <SiteFooter variant="dark" />
     </div>
   );
 }

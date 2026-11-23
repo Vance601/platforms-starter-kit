@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { US_TIMEZONES } from "@/lib/us-timezones";
 import BrandLogo from "@/components/brand-logo";
+import SiteFooter from "@/components/site-footer";
 
 export default function SignupPage() {
   const [f, setF] = useState({
@@ -49,7 +50,7 @@ export default function SignupPage() {
   const input: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd", fontSize: 14, marginBottom: 14, boxSizing: "border-box" };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f6f7f9", padding: 24 }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#f6f7f9", padding: 24, gap: 24 }}>
       <div style={{ background: "#fff", padding: 36, borderRadius: 14, maxWidth: 520, width: "100%", boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }}>
         <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 14 }}><BrandLogo size={28} /></div>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 6 }}>Create your Battery City account</h1>
@@ -83,6 +84,9 @@ export default function SignupPage() {
               <div style={{ flex: 1 }}><label style={label}>Barcode prefix</label><input style={input} value={f.barcodePrefix} onChange={set("barcodePrefix")} maxLength={6} /></div>
               <div style={{ flex: 1 }}><label style={label}>Core charge ($)</label><input style={input} type="number" min="0" step="0.01" value={f.coreCharge} onChange={set("coreCharge")} /></div>
             </div>
+            <p style={{ color: "#555", fontSize: 12, margin: "0 0 12px", lineHeight: 1.5 }}>
+              By creating an account, you agree to our <a href="/terms" style={{ color: "#2563eb" }}>Terms of Service</a> and <a href="/privacy" style={{ color: "#2563eb" }}>Privacy Policy</a>. See also our <a href="/returns" style={{ color: "#2563eb" }}>Refund, Return &amp; Warranty Policy</a> and <a href="/about" style={{ color: "#2563eb" }}>About</a> pages.
+            </p>
             <button type="submit" disabled={busy} style={{ width: "100%", padding: "12px 24px", borderRadius: 8, border: "none", background: busy ? "#9db4d8" : "#2563eb", color: "#fff", fontSize: 16, fontWeight: 600, cursor: busy ? "default" : "pointer", marginTop: 6 }}>
               {busy ? "Sending..." : "Create account"}
             </button>
@@ -90,6 +94,7 @@ export default function SignupPage() {
           </form>
         )}
       </div>
+      <SiteFooter variant="light" />
     </div>
   );
 }

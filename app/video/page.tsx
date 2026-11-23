@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import BrandLogo from "@/components/brand-logo";
 import AdVideo from "@/components/ad-video";
+import SiteFooter from "@/components/site-footer";
 
 export const metadata: Metadata = {
   title: "See Battery City in 60 seconds",
@@ -76,6 +77,7 @@ export default function VideoPage() {
           </a>
         </div>
       </main>
+      <SiteFooter variant="dark" />
     </div>
   );
 }

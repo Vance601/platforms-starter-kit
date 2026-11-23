@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SiteFooter from "@/components/site-footer";
 
 type Result = {
   customer: string | null;
@@ -42,7 +43,8 @@ export default function WarrantyLookupPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-900 px-4 py-10 text-slate-50">
+    <div className="flex min-h-screen flex-col bg-slate-900 text-slate-50">
+    <main className="flex-1 px-4 py-10">
       <div className="mx-auto max-w-md space-y-5">
         <h1 className="text-2xl font-bold">Battery warranty lookup</h1>
         <p className="text-sm text-slate-400">
@@ -97,5 +99,7 @@ export default function WarrantyLookupPage() {
         ))}
       </div>
     </main>
+    <SiteFooter variant="dark" />
+    </div>
   );
 }
