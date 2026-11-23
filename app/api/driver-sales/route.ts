@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
 import { getCurrentUser } from "@/lib/current-user";
 import { ensureSaleTables } from "@/lib/sale-records";
+import { ensureLoggedByDriverColumn } from "@/lib/driver-roles";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -99,6 +100,7 @@ export async function GET(req: NextRequest) {
     `;
     const hasSales = !!(salesTable[0] as { exists?: boolean } | undefined)?.exists;
 
+    await ensureLoggedByDriverColumn();
     const detailSql = hasSales
       ? sql`
       SELECT
@@ -115,10 +117,14 @@ export async function GET(req: NextRequest) {
         s.sale_amount,
         b.cost,
         cr.status AS core_status,
-        t.truck_number
+        t.truck_number,
+        b.id AS battery_id,
+        m.id AS movement_id,
+        ld.name AS logged_by_name
       FROM battery_movements m
       JOIN drivers d ON d.id = m.driver_id
       JOIN batteries b ON b.id = m.battery_id
+      LEFT JOIN drivers ld ON ld.id = m.logged_by_driver_id
       LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN sale_records sr ON sr.movement_id = m.id
@@ -158,10 +164,14 @@ export async function GET(req: NextRequest) {
         NULL::numeric AS sale_amount,
         b.cost,
         cr.status AS core_status,
-        t.truck_number
+        t.truck_number,
+        b.id AS battery_id,
+        m.id AS movement_id,
+        ld.name AS logged_by_name
       FROM battery_movements m
       JOIN drivers d ON d.id = m.driver_id
       JOIN batteries b ON b.id = m.battery_id
+      LEFT JOIN drivers ld ON ld.id = m.logged_by_driver_id
       LEFT JOIN battery_models mdl ON mdl.id = b.battery_model_id
       LEFT JOIN battery_types bt ON bt.id = b.battery_type_id
       LEFT JOIN sale_records sr ON sr.movement_id = m.id

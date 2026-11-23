@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 type NavItem = { href: string; label: string };
 
-const ITEMS: NavItem[] = [
+const DRIVER_ITEMS: NavItem[] = [
   { href: "/driver/transfer", label: "Truck" },
   { href: "/driver/load", label: "Load" },
   { href: "/driver/move", label: "Move" },
@@ -14,8 +15,34 @@ const ITEMS: NavItem[] = [
   { href: "/driver/pin", label: "PIN" },
 ];
 
+// Warehouse staff land on Transfer and use it to move stock onto trucks
+// without claiming them. Load is omitted because Transfer replaces it.
+const WAREHOUSE_ITEMS: NavItem[] = [
+  { href: "/driver/transfer", label: "Transfer" },
+  { href: "/driver/move", label: "Move" },
+  { href: "/driver/sell", label: "Sell" },
+  { href: "/driver/cores", label: "Cores" },
+  { href: "/driver/pin", label: "PIN" },
+];
+
 export default function DriverNav() {
   const pathname = usePathname();
+  const [isWarehouse, setIsWarehouse] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/driver/me", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive && d?.success && d.isWarehouse) setIsWarehouse(true);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const items = isWarehouse ? WAREHOUSE_ITEMS : DRIVER_ITEMS;
 
   const barStyle: React.CSSProperties = {
     display: "flex",
@@ -27,17 +54,18 @@ export default function DriverNav() {
 
   return (
     <nav style={barStyle}>
-      {ITEMS.map((item) => {
+      {items.map((item) => {
         const active = pathname === item.href;
+        const isTransfer = item.label === "Transfer";
         const linkStyle: React.CSSProperties = {
-          flex: "1 1 auto",
+          flex: isTransfer ? "1 1 100%" : "1 1 auto",
           textAlign: "center",
           padding: "10px 12px",
           fontSize: 14,
           fontWeight: 600,
           borderRadius: 10,
           textDecoration: "none",
-          border: "1px solid #334155",
+          border: isTransfer && !active ? "1px solid #22c55e" : "1px solid #334155",
           background: active ? "#22c55e" : "#1e293b",
           color: active ? "#0f172a" : "#f8fafc",
         };

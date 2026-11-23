@@ -12,7 +12,13 @@ type Battery = {
   barcode: string;
   serial_number: string | null;
   status: string;
+  truck_id?: string | null;
+  truck_number?: string | null;
+  current_driver_name?: string | null;
+  model_code?: string | null;
 };
+
+type SellingDriver = { id: string; name: string };
 
 type ClaimedTruck = {
   id: string;
@@ -31,6 +37,9 @@ type SellableResponse = {
   driver?: { id: string; name: string; company_id: string };
   claimedTruck?: ClaimedTruck;
   batteries?: Battery[];
+  isWarehouse?: boolean;
+  sellHelp?: string | null;
+  drivers?: SellingDriver[];
 };
 
 export default function DriverSellPage() {
@@ -41,6 +50,10 @@ export default function DriverSellPage() {
   const [driverName, setDriverName] = useState<string>("");
   const [claimedTruck, setClaimedTruck] = useState<ClaimedTruck>(null);
   const [batteries, setBatteries] = useState<Battery[]>([]);
+  const [isWarehouse, setIsWarehouse] = useState(false);
+  const [sellHelp, setSellHelp] = useState<string | null>(null);
+  const [sellingDrivers, setSellingDrivers] = useState<SellingDriver[]>([]);
+  const [soldByDriverId, setSoldByDriverId] = useState("");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [callNumber, setCallNumber] = useState<string>("");
@@ -101,6 +114,9 @@ export default function DriverSellPage() {
       setDriverName(data.driver?.name || "");
       setClaimedTruck(data.claimedTruck || null);
       setBatteries(data.batteries || []);
+      setIsWarehouse(!!data.isWarehouse);
+      setSellHelp(data.sellHelp || null);
+      setSellingDrivers(data.drivers || []);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -145,6 +161,9 @@ export default function DriverSellPage() {
         isWarranty,
         coreKept,
       };
+      if (isWarehouse && soldByDriverId) {
+        payload.soldByDriverId = soldByDriverId;
+      }
       if (coreKept) {
         payload.coreCharge = coreCharge.trim();
       }
@@ -211,7 +230,7 @@ export default function DriverSellPage() {
     (replacesId === "OTHER" && warrantyNote.trim() !== "");
 
   const canSell =
-    !!selectedId && !!callNumber.trim() && warrantyOk && !vinMissing && !submitting;
+    !!selectedId && !!callNumber.trim() && warrantyOk && !vinMissing && !submitting && (!isWarehouse || !!soldByDriverId);
 
   if (loading) {
     return (
@@ -237,8 +256,20 @@ export default function DriverSellPage() {
             ) : null}
           </div>
 
-          {/* Claimed truck banner */}
-          {claimedTruck ? (
+          {isWarehouse ? (
+            <div className="rounded-lg border border-emerald-700 bg-emerald-950/30 px-4 py-3">
+              <p className="font-semibold text-emerald-300">Warehouse staff</p>
+              <p className="text-sm text-emerald-200/80">
+                {sellHelp || "Moving batteries to a truck? Use Transfer. Recording a sale for a driver? Pick the driver."}
+              </p>
+              <button
+                onClick={() => router.push("/driver/transfer")}
+                className="mt-2 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white"
+              >
+                Go to Transfer
+              </button>
+            </div>
+          ) : claimedTruck ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/50 px-4 py-3">
               <p className="text-sm text-slate-400">Selling from</p>
               <p className="text-lg font-semibold">
@@ -272,17 +303,17 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Step 1: VIN (default) */}
-          {claimedTruck && batteries.length > 0 && vinMode === "vin" ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && vinMode === "vin" ? (
             <VinStep state={vinState} onChange={setVinState} onSkip={() => { setVinState(null); setVinMode("classic"); }} />
           ) : null}
-          {claimedTruck && batteries.length > 0 && vinMode === "classic" ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && vinMode === "classic" ? (
             <button onClick={() => setVinMode("vin")} className="text-xs text-blue-400 underline">
               Selling without a VIN. Switch back to VIN-first sale
             </button>
           ) : null}
 
           {/* Scan-to-sell: scanning a battery's barcode selects it */}
-          {claimedTruck && showRest && batteries.length > 0 ? (
+          {(isWarehouse || claimedTruck) && showRest && batteries.length > 0 ? (
             <div className="space-y-2">
               <p className="text-sm font-semibold">Scan the battery you&apos;re installing</p>
               <BarcodeReader onScan={onBatteryScan} />
@@ -291,10 +322,10 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Battery list */}
-          {claimedTruck && showRest ? (
+          {(isWarehouse || claimedTruck) && showRest ? (
             batteries.length === 0 ? (
               <p className="py-6 text-center text-slate-500">
-                No batteries on your truck to sell.
+                No batteries on a truck to sell.
               </p>
             ) : (
               <div className="space-y-2">
@@ -315,6 +346,13 @@ export default function DriverSellPage() {
                       }
                     >
                       <p className="font-mono text-sm">{b.barcode}</p>
+                      {b.truck_number ? (
+                        <p className="text-xs text-slate-400">
+                          Truck #{b.truck_number}
+                          {b.current_driver_name ? ` · ${b.current_driver_name}` : ""}
+                          {b.model_code ? ` · ${b.model_code}` : ""}
+                        </p>
+                      ) : null}
                       {isMatch(b.id) ? (
                         <p className="text-xs font-semibold text-green-400">✓ Matches group {vinState?.group}</p>
                       ) : null}
@@ -331,7 +369,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Call number */}
-          {claimedTruck && batteries.length > 0 && showRest ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && showRest ? (
             <div className="space-y-1">
               <label className="text-sm text-slate-400">
                 Call number (required)
@@ -347,7 +385,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Core disposition */}
-          {claimedTruck && batteries.length > 0 && showRest ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && showRest ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
               <label className="flex items-center gap-3">
                 <input
@@ -396,7 +434,7 @@ export default function DriverSellPage() {
           ) : null}
 
           {/* Warranty toggle */}
-          {claimedTruck && batteries.length > 0 && showRest ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && showRest ? (
             <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
               <label className="flex items-center gap-3">
                 <input
@@ -450,8 +488,30 @@ export default function DriverSellPage() {
             </div>
           ) : null}
 
+          
+          {isWarehouse && (isWarehouse || claimedTruck) && showRest ? (
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold">
+                Sold by
+                <select
+                  value={soldByDriverId}
+                  onChange={(e) => setSoldByDriverId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Pick the driver who made this sale</option>
+                  {sellingDrivers.map((d) => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs text-slate-400">
+                Sales are credited to this driver. You are saved as the person who logged it.
+              </p>
+            </div>
+          ) : null}
+
           {/* Big Sell button */}
-          {claimedTruck && batteries.length > 0 && showRest ? (
+          {(isWarehouse || claimedTruck) && batteries.length > 0 && showRest ? (
             <button
               onClick={handleSell}
               disabled={!canSell}
@@ -472,6 +532,8 @@ export default function DriverSellPage() {
                 ? vinMissing
                 : !callNumber.trim()
                 ? "Enter a call number"
+                : isWarehouse && !soldByDriverId
+                ? "Pick the driver who made this sale"
                 : isWarranty && replacesId === ""
                 ? "Pick the failed battery"
                 : isWarranty && replacesId === "OTHER" && !warrantyNote.trim()

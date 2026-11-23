@@ -9,6 +9,7 @@ type Driver = {
   active: boolean;
   company: string;
   onShiftTruck: string | null;
+  isWarehouse?: boolean;
 };
 
 
@@ -182,7 +183,10 @@ export default function AdminDrivers() {
     return (
       <div style={wrap}>
         <div style={{ ...inner, maxWidth: 360 }}>
-          <h1 style={{ fontSize: 22, marginBottom: 16 }}>Admin - Drivers</h1>
+          <h1 style={{ fontSize: 22, marginBottom: 8 }}>Admin - Drivers</h1>
+          <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>
+            Use <strong style={{ color: "#e2e8f0" }}>Mark warehouse</strong> for staff who load trucks but do not sell. Warehouse staff use Transfer in the driver app and are not credited as the seller.
+          </p>
           {loading ? (
             <p style={{ color: "#94a3b8", fontSize: 14 }}>Loading…</p>
           ) : (
@@ -325,6 +329,9 @@ export default function AdminDrivers() {
                       <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8, textTransform: "uppercase" }}>
                         {d.company}
                       </span>
+                      {d.isWarehouse && (
+                        <span style={{ fontSize: 11, color: "#86efac", marginLeft: 8 }}>WAREHOUSE</span>
+                      )}
                       {!d.active && (
                         <span style={{ fontSize: 11, color: "#f87171", marginLeft: 8 }}>INACTIVE</span>
                       )}
@@ -351,6 +358,13 @@ export default function AdminDrivers() {
                     style={{ ...btn, background: "#334155", color: "#f8fafc" }}
                   >
                     Reset PIN
+                  </button>
+                  <button
+                    onClick={() => patchDriver({ driverId: d.id, action: "setWarehouse", isWarehouse: !d.isWarehouse })}
+                    disabled={busy}
+                    style={{ ...btn, background: d.isWarehouse ? "#14532d" : "#334155", color: "#f8fafc" }}
+                  >
+                    {d.isWarehouse ? "Warehouse staff" : "Mark warehouse"}
                   </button>
                   <button
                     onClick={() => patchDriver({ driverId: d.id, action: "toggleActive" })}

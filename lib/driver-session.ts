@@ -3,6 +3,7 @@
 import crypto from "crypto";
 import { sql } from "@vercel/postgres";
 import type { NextRequest } from "next/server";
+import { ensureDriverWarehouseFlag, truthyFlag } from "@/lib/driver-roles";
 
 export function verifyDriverToken(token: string | undefined): string | null {
   if (!token) return null;
@@ -22,13 +23,15 @@ export type DriverContext = {
   companyId: string;
   orgId: string | null;
   truckId: string | null;
+  isWarehouse: boolean;
 };
 
 export async function getDriverContext(req: NextRequest): Promise<DriverContext | null> {
   const driverId = verifyDriverToken(req.cookies.get("driver_session")?.value);
   if (!driverId) return null;
+  await ensureDriverWarehouseFlag();
   const { rows } = await sql`
-    SELECT d.id, d.name, d.company_id, c.org_id
+    SELECT d.id, d.name, d.company_id, c.org_id, COALESCE(d.is_warehouse, FALSE) AS is_warehouse
     FROM drivers d LEFT JOIN companies c ON c.id = d.company_id
     WHERE d.id = ${driverId} AND d.active = TRUE LIMIT 1;
   `;
@@ -40,5 +43,6 @@ export async function getDriverContext(req: NextRequest): Promise<DriverContext 
     companyId: rows[0].company_id,
     orgId: rows[0].org_id == null ? null : String(rows[0].org_id),
     truckId: t[0]?.id ?? null,
+    isWarehouse: truthyFlag(rows[0].is_warehouse),
   };
 }

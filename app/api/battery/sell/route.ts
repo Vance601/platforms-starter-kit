@@ -4,33 +4,23 @@ import { sql } from "@vercel/postgres";
 import crypto from "crypto";
 import { parseSaleCustomer, ensureSaleTables, writeSaleRecord } from "@/lib/sale-records";
 import { getOrgSettings } from "@/lib/org-settings";
+import { getDriverContext } from "@/lib/driver-session";
+import { ensureLoggedByDriverColumn, resolveSaleSeller, SELL_WAREHOUSE_HELP } from "@/lib/driver-roles";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Verify the session cookie set by auth-driver login.
-function verifySession(token: string | undefined): string | null {
-  if (!token) return null;
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [driverId, expiryStr, sig] = parts;
-  const secret = process.env.MIGRATE_SECRET || "";
-  const expected = crypto.scryptSync(`${driverId}.${expiryStr}`, secret, 32).toString("hex");
-  if (sig !== expected) return null;
-  if (Date.now() > Number(expiryStr)) return null;
-  return driverId;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const token = req.cookies.get("driver_session")?.value;
-    const driverId = verifySession(token);
-    if (!driverId) {
+    const ctx = await getDriverContext(req);
+    if (!ctx) {
       return NextResponse.json(
         { success: false, error: "Not signed in. Please log in again." },
         { status: 401 }
       );
     }
+    const driverId = ctx.driverId;
+    await ensureLoggedByDriverColumn();
 
     const body = await req.json();
     const batteryId: string | undefined = body?.batteryId;
@@ -65,36 +55,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Driver + company.
-    const { rows: driverRows } = await sql`
-      SELECT id, name, company_id
-      FROM drivers
-      WHERE id = ${driverId} AND active = TRUE;
-    `;
-    if (driverRows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Driver not found." },
-        { status: 404 }
-      );
-    }
-    const driver = driverRows[0];
+    const driver = { id: ctx.driverId, name: ctx.name, company_id: ctx.companyId };
 
-    // The driver's claimed truck — the battery being sold must be on it.
-    const { rows: truckRows } = await sql`
-      SELECT id, truck_number
-      FROM trucks
-      WHERE current_driver_id = ${driverId}
-      LIMIT 1;
-    `;
-    if (truckRows.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "You haven't claimed a truck. Claim your truck first." },
-        { status: 409 }
-      );
-    }
-    const truck = truckRows[0];
-
-    // The battery must exist, be on_truck, on THIS driver's truck, same company.
+    // The battery must exist, be on_truck, and belong to this company.
     const { rows: batteryRows } = await sql`
       SELECT id, barcode, status, company_id, location_id, truck_id
       FROM batteries
@@ -114,11 +77,68 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    if (battery.status !== "on_truck" || battery.truck_id !== truck.id) {
+    if (battery.status !== "on_truck" || !battery.truck_id) {
       return NextResponse.json(
-        { success: false, error: `Battery is not on your truck (status: ${battery.status}).` },
+        { success: false, error: `Battery is not on a truck (status: ${battery.status}).` },
         { status: 409 }
       );
+    }
+
+    const { rows: truckRows } = await sql`
+      SELECT id, truck_number, current_driver_id
+      FROM trucks
+      WHERE id = ${battery.truck_id}
+      LIMIT 1;
+    `;
+    if (truckRows.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "The truck for that battery was not found." },
+        { status: 409 }
+      );
+    }
+    const truck = truckRows[0];
+
+    if (!ctx.isWarehouse && ctx.truckId !== truck.id) {
+      return NextResponse.json(
+        { success: false, error: "Battery is not on your truck. Claim the truck first, or use Transfer to move stock." },
+        { status: 409 }
+      );
+    }
+
+    const soldByRaw = typeof body?.soldByDriverId === "string" ? body.soldByDriverId.trim() : "";
+    const sellerDecision = resolveSaleSeller({
+      sessionDriverId: ctx.driverId,
+      isWarehouse: ctx.isWarehouse,
+      claimedTruckId: ctx.truckId,
+      batteryTruckId: truck.id,
+      soldByDriverId: soldByRaw || null,
+    });
+    if (!sellerDecision.ok) {
+      return NextResponse.json({ success: false, error: sellerDecision.error }, { status: 400 });
+    }
+
+    let sellerId = sellerDecision.sellerId;
+    let sellerName = ctx.name;
+    if (sellerId !== ctx.driverId) {
+      const { rows: sellerRows } = await sql`
+        SELECT id, name, company_id, active, COALESCE(is_warehouse, FALSE) AS is_warehouse
+        FROM drivers
+        WHERE id = ${sellerId}
+        LIMIT 1;
+      `;
+      const seller = sellerRows[0];
+      if (!seller || seller.active === false || seller.company_id !== ctx.companyId) {
+        return NextResponse.json(
+          { success: false, error: "Pick an active driver at your company." },
+          { status: 400 }
+        );
+      }
+      if (seller.is_warehouse === true || seller.is_warehouse === "t" || seller.is_warehouse === "true") {
+        return NextResponse.json({ success: false, error: SELL_WAREHOUSE_HELP }, { status: 400 });
+      }
+      sellerName = String(seller.name);
+    } else if (ctx.isWarehouse) {
+      return NextResponse.json({ success: false, error: SELL_WAREHOUSE_HELP }, { status: 400 });
     }
 
     // If a failed battery was picked, validate it: must be a sold battery in this company.
@@ -236,16 +256,18 @@ export async function POST(req: NextRequest) {
     //    column all reports read for driver attribution. Do NOT use to_driver_id
     //    here — that column FK-references users, not drivers.
     const movementId = crypto.randomUUID();
+    const loggedSuffix = sellerId !== ctx.driverId ? `, logged by ${ctx.name}` : "";
     const movementNote = isWarranty
-      ? `WARRANTY sale on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})` +
-        (validatedReplacesId ? ` — replaces battery ${validatedReplacesId}` : ` — replaces (not in system): ${warrantyNote}`)
-      : `Sold on call #${callNumber} by ${driver.name} (truck #${truck.truck_number})`;
+      ? `WARRANTY sale on call #${callNumber} by ${sellerName} (truck #${truck.truck_number})` +
+        (validatedReplacesId ? ` — replaces battery ${validatedReplacesId}` : ` — replaces (not in system): ${warrantyNote}`) +
+        loggedSuffix
+      : `Sold on call #${callNumber} by ${sellerName} (truck #${truck.truck_number})` + loggedSuffix;
     await sql`
       INSERT INTO battery_movements
-        (id, battery_id, from_status, to_status, from_truck_id, driver_id, call_reference, notes)
+        (id, battery_id, from_status, to_status, from_truck_id, driver_id, logged_by_driver_id, call_reference, notes)
       VALUES
         (${movementId}, ${battery.id}, 'on_truck', 'sold',
-         ${truck.id}, ${driverId}, ${callNumber}, ${movementNote});
+         ${truck.id}, ${sellerId}, ${ctx.driverId}, ${callNumber}, ${movementNote});
     `;
 
     // 3) Create the core record.
@@ -257,8 +279,8 @@ export async function POST(req: NextRequest) {
     const coreId = crypto.randomUUID();
     const coreStatus = coreKept ? "customer_kept" : "owed";
     const coreNote = coreKept
-      ? `Customer kept core on call #${callNumber}. Core charge $${coreCharge?.toFixed(2)} entered by ${driver.name} (truck #${truck.truck_number}).`
-      : `Core owed from ${isWarranty ? "warranty " : ""}sale on call #${callNumber} by ${driver.name}`;
+      ? `Customer kept core on call #${callNumber}. Core charge $${coreCharge?.toFixed(2)} entered by ${ctx.name} for ${sellerName} (truck #${truck.truck_number}).`
+      : `Core owed from ${isWarranty ? "warranty " : ""}sale on call #${callNumber} by ${sellerName}`;
 
     await sql`
       INSERT INTO core_returns
@@ -285,7 +307,7 @@ export async function POST(req: NextRequest) {
         vehicleSale.batteryGroup = org[0]?.grp ?? vehicleSale.batteryGroup;
         record = await writeSaleRecord({
           input: vehicleSale, orgId, companyId: battery.company_id, batteryId: battery.id,
-          movementId, driverId, callNumber, isWarranty, timeZone: settings.timezone,
+          movementId, driverId: sellerId, callNumber, isWarranty, timeZone: settings.timezone,
         });
       } catch (e) {
         recordError = e instanceof Error ? e.message : "unknown";
@@ -294,10 +316,11 @@ export async function POST(req: NextRequest) {
 
     await logAudit({
       action: isWarranty ? "battery.warranty_install" : "battery.sell", actorType: "driver",
-      actorId: driverId, actorName: driver.name, companyId: battery.company_id,
+      actorId: ctx.driverId, actorName: ctx.name, companyId: battery.company_id,
       entityType: "battery", entityId: battery.id,
       details: {
         barcode: battery.barcode, callNumber, coreId, coreStatus, coreCharge,
+        soldByDriverId: sellerId, soldByName: sellerName, loggedByDriverId: ctx.driverId,
         ...(vehicleSale ? { vin: vehicleSale.vin, saleRecordId: record?.saleRecordId ?? null, recordError } : {}),
       }, req,
     });

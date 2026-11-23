@@ -33,6 +33,9 @@ type SaleDetail = {
   cost: string | number | null;
   core_status: string | null;
   truck_number: string | null;
+  battery_id?: string | null;
+  movement_id?: string | null;
+  logged_by_name?: string | null;
 };
 type ApiResponse = {
   success: boolean;
@@ -98,6 +101,58 @@ export default function DriverSalesPage() {
   const [rows, setRows] = useState<MergedRow[]>([]);
   const [loadedRange, setLoadedRange] = useState<{ start: string; end: string } | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
+  const [reassignKey, setReassignKey] = useState<string | null>(null);
+  const [reassignDriverId, setReassignDriverId] = useState("");
+  const [reassignNote, setReassignNote] = useState("");
+  const [reassignBusy, setReassignBusy] = useState(false);
+  const [reassignMsg, setReassignMsg] = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/drivers", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.success) {
+          setDrivers((d.drivers || []).filter((x: { active?: boolean }) => x.active !== false).map((x: { id: string; name: string }) => ({ id: x.id, name: x.name })));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function reassignSeller(d: SaleDetail) {
+    if (!reassignDriverId) {
+      setReassignMsg("Pick the driver who should get credit.");
+      return;
+    }
+    setReassignBusy(true);
+    setReassignMsg("");
+    try {
+      const res = await fetch("/api/sales/reassign-seller", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batteryId: d.battery_id,
+          movementId: d.movement_id,
+          newDriverId: reassignDriverId,
+          note: reassignNote.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setReassignMsg(data.error || "Could not reassign that sale.");
+      } else {
+        setReassignMsg(data.message || "Seller updated.");
+        setReassignKey(null);
+        setReassignDriverId("");
+        setReassignNote("");
+        await load();
+      }
+    } catch {
+      setReassignMsg("Network error");
+    } finally {
+      setReassignBusy(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -427,6 +482,8 @@ export default function DriverSalesPage() {
                                     <th style={th}>Type</th>
                                     <th style={th}>Amount</th>
                                     <th style={th}>Core</th>
+                                    <th style={th}>Logged by</th>
+                                    <th style={th}></th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -450,6 +507,54 @@ export default function DriverSalesPage() {
                                           : "—"}
                                       </td>
                                       <td style={td}>{coreLabel(d.core_status)}</td>
+                                      <td style={td}>{d.logged_by_name || "—"}</td>
+                                      <td style={td}>
+                                        {d.battery_id || d.movement_id ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const key = `${d.movement_id || ""}:${d.barcode || i}`;
+                                              setReassignKey(reassignKey === key ? null : key);
+                                              setReassignDriverId("");
+                                              setReassignNote("");
+                                              setReassignMsg("");
+                                            }}
+                                            style={{ background: "#e2e8f0", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}
+                                          >
+                                            Reassign seller
+                                          </button>
+                                        ) : null}
+                                        {reassignKey === `${d.movement_id || ""}:${d.barcode || i}` ? (
+                                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
+                                            <select
+                                              aria-label="New selling driver"
+                                              value={reassignDriverId}
+                                              onChange={(e) => setReassignDriverId(e.target.value)}
+                                              style={{ padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                                            >
+                                              <option value="">Pick the driver</option>
+                                              {drivers.filter((dr) => dr.id !== d.driver_id).map((dr) => (
+                                                <option key={dr.id} value={dr.id}>{dr.name}</option>
+                                              ))}
+                                            </select>
+                                            <input
+                                              value={reassignNote}
+                                              onChange={(e) => setReassignNote(e.target.value)}
+                                              placeholder="Optional note"
+                                              style={{ padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                                            />
+                                            <button
+                                              type="button"
+                                              disabled={reassignBusy || !reassignDriverId}
+                                              onClick={() => reassignSeller(d)}
+                                              style={{ background: "#0f172a", color: "#f8fafc", border: "none", borderRadius: 6, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}
+                                            >
+                                              {reassignBusy ? "Saving…" : "Save new seller"}
+                                            </button>
+                                            {reassignMsg ? <span style={{ fontSize: 12, color: "#334155" }}>{reassignMsg}</span> : null}
+                                          </div>
+                                        ) : null}
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
