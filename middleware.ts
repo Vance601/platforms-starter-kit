@@ -18,6 +18,10 @@ const PUBLIC_ROUTES = [
   "/api/public/signup",
   "/api/public/demo", // one-click demo (rate limited)
   "/video", // public shareable ad page
+  "/privacy",
+  "/terms",
+  "/returns",
+  "/about",
   "/print", // label preview (?demo=1) — data still loaded through authed /api/print-labels
   "/api/cron/demo-cleanup", // checks CRON_SECRET itself
   "/api/reports/daily-movements", // checks CRON_SECRET itself

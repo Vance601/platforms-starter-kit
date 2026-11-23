@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
 import TryDemoButton from "@/components/try-demo-button";
 import BrandLogo from "@/components/brand-logo";
+import SiteFooter from "@/components/site-footer";
 
 // Primary sign-in page for battery-city.com.
 //
@@ -66,7 +67,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
+    <div className="flex min-h-screen flex-col bg-slate-900">
+      <div className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-2xl bg-slate-800 p-8 shadow-xl">
         <h1 className="flex justify-center text-2xl font-bold text-white"><BrandLogo size={32} /></h1>
         <p className="mt-1 text-center text-sm text-slate-400">
@@ -172,6 +174,8 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
+      </div>
+      <SiteFooter variant="dark" />
     </div>
   );
 }
