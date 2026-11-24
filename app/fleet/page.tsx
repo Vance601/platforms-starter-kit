@@ -1,5 +1,6 @@
 "use client"
 import { useOrgName } from "@/lib/use-org-name"
+import { formatTruckLabel } from "@/lib/truck-label"
 
 import { useOrgCompanies } from "@/lib/use-org-companies"
 import { useState, useEffect } from "react"
@@ -28,6 +29,7 @@ type Truck = {
   current_driver_name: string | null
   batteries_on_truck: number
   owed_cores: number
+  breakdown?: { code: string; n: number }[]
 }
 
 type LocationOverview = {
@@ -252,12 +254,13 @@ export default function FleetPage() {
                 const hasDriver = !!t.current_driver_id
                 const hasCargo  = t.batteries_on_truck > 0
                 const hasOwed   = t.owed_cores > 0
+                const sortedBreak = [...(t.breakdown || [])].sort((a, b) => b.n - a.n || a.code.localeCompare(b.code))
                 return (
                   <Card key={t.id}>
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">Truck #{t.truck_number}</CardTitle>
+                          <CardTitle className="text-lg">{formatTruckLabel(t.truck_number)}</CardTitle>
                           <CardDescription>
                             {t.year_model || "—"}
                             {t.vin_last5 ? ` · VIN …${t.vin_last5}` : ""}
@@ -296,6 +299,20 @@ export default function FleetPage() {
                       <div className="text-xs text-muted-foreground pt-1">
                         {t.company_name || "Unassigned company"}
                       </div>
+                      {sortedBreak.length > 0 ? (
+                        <div className="pt-1">
+                          <p className="text-xs text-muted-foreground mb-1">By model</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {sortedBreak.map((b) => (
+                              <Badge key={b.code} variant="outline" className="text-xs">
+                                {b.code}: {b.n}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No batteries on this truck</p>
+                      )}
                     </CardContent>
                   </Card>
                 )

@@ -45,7 +45,34 @@ export async function GET() {
       ORDER BY t.truck_number ASC;
     `;
 
-    return NextResponse.json({ success: true, trucks: rows });
+    const { rows: breakdown } = await sql`
+      SELECT
+        b.current_truck_id AS truck_id,
+        COALESCE(bm.code, 'Unknown') AS code,
+        COUNT(*)::int AS n
+      FROM batteries b
+      LEFT JOIN battery_models bm ON bm.id = b.battery_model_id
+      WHERE b.status = 'on_truck'
+        AND b.current_truck_id IS NOT NULL
+        AND b.company_id IN (SELECT id FROM companies WHERE org_id = ${orgId})
+      GROUP BY b.current_truck_id, bm.code
+      ORDER BY n DESC, bm.code;
+    `;
+
+    const byTruck = new Map<string, { code: string; n: number }[]>();
+    for (const row of breakdown) {
+      const id = row.truck_id as string;
+      const arr = byTruck.get(id) || [];
+      arr.push({ code: row.code as string, n: row.n as number });
+      byTruck.set(id, arr);
+    }
+
+    const trucks = rows.map((t) => ({
+      ...t,
+      breakdown: byTruck.get(t.id as string) || [],
+    }));
+
+    return NextResponse.json({ success: true, trucks });
   } catch (err: unknown) {
     return NextResponse.json(
       { success: false, error: err instanceof Error ? err.message : "Unknown error" },
