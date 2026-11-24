@@ -2,7 +2,8 @@
 
 import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
-import { addDaysYmd, DEFAULT_BUSINESS_TIMEZONE, todayYmd } from "@/lib/org-day-range";
+import { addDaysYmd, DEFAULT_BUSINESS_TIMEZONE, todayYmd, zonedTimeHM } from "@/lib/org-day-range";
+import { formatTruckLabel } from "@/lib/truck-label";
 
 type SaleRow = {
   driver_id: string;
@@ -37,6 +38,23 @@ type SaleDetail = {
   battery_id?: string | null;
   movement_id?: string | null;
   logged_by_name?: string | null;
+};
+type EditOptions = {
+  models: { id: string; code: string; name?: string }[];
+  trucks: { id: string; truck_number: string }[];
+  drivers: { id: string; name: string }[];
+};
+type EditForm = {
+  modelCode: string;
+  truckId: string;
+  driverId: string;
+  callNumber: string;
+  invoiceNumber: string;
+  isWarranty: boolean;
+  coreStatus: string;
+  soldDate: string;
+  soldTime: string;
+  note: string;
 };
 type ApiResponse = {
   success: boolean;
@@ -101,11 +119,23 @@ export default function DriverSalesPage() {
   const [loadedRange, setLoadedRange] = useState<{ start: string; end: string } | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [drivers, setDrivers] = useState<{ id: string; name: string }[]>([]);
-  const [reassignKey, setReassignKey] = useState<string | null>(null);
-  const [reassignDriverId, setReassignDriverId] = useState("");
-  const [reassignNote, setReassignNote] = useState("");
-  const [reassignBusy, setReassignBusy] = useState(false);
-  const [reassignMsg, setReassignMsg] = useState("");
+  const [entryFilter, setEntryFilter] = useState("");
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
+  const [editOptions, setEditOptions] = useState<EditOptions | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    modelCode: "",
+    truckId: "",
+    driverId: "",
+    callNumber: "",
+    invoiceNumber: "",
+    isWarranty: false,
+    coreStatus: "owed",
+    soldDate: "",
+    soldTime: "",
+    note: "",
+  });
 
   useEffect(() => {
     fetch("/api/admin/drivers", { cache: "no-store" })
@@ -118,38 +148,102 @@ export default function DriverSalesPage() {
       .catch(() => {});
   }, []);
 
-  async function reassignSeller(d: SaleDetail) {
-    if (!reassignDriverId) {
-      setReassignMsg("Pick the driver who should get credit.");
+  function saleKey(d: SaleDetail, i: number) {
+    return `${d.movement_id || ""}:${d.barcode || i}`;
+  }
+
+  function soldParts(iso: string | null | undefined) {
+    if (!iso) return { date: "", time: "" };
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return { date: String(iso).slice(0, 10), time: "" };
+    return { date: todayYmd(DEFAULT_BUSINESS_TIMEZONE, d), time: zonedTimeHM(d, DEFAULT_BUSINESS_TIMEZONE) };
+  }
+
+  async function openEdit(d: SaleDetail, i: number) {
+    const key = saleKey(d, i);
+    if (editKey === key) {
+      setEditKey(null);
+      setEditMsg("");
       return;
     }
-    setReassignBusy(true);
-    setReassignMsg("");
+    const parts = soldParts(d.sold_at);
+    setEditKey(key);
+    setEditMsg("");
+    setEditForm({
+      modelCode: d.battery_group || "",
+      truckId: "",
+      driverId: d.driver_id || "",
+      callNumber: d.call_number || "",
+      invoiceNumber: d.quickbooks_invoice_id || "",
+      isWarranty: !!d.is_warranty,
+      coreStatus: d.core_status || "owed",
+      soldDate: parts.date,
+      soldTime: parts.time,
+      note: "",
+    });
     try {
-      const res = await fetch("/api/sales/reassign-seller", {
+      const qs = new URLSearchParams();
+      if (d.movement_id) qs.set("movementId", d.movement_id);
+      if (d.battery_id) qs.set("batteryId", d.battery_id);
+      const res = await fetch(`/api/sales/edit-entry?${qs}`, { cache: "no-store" });
+      const data = await res.json();
+      if (data?.options) setEditOptions(data.options);
+      if (data?.success && data.entry) {
+        const e = data.entry;
+        setEditForm({
+          modelCode: e.modelCode || d.battery_group || "",
+          truckId: e.truckId || "",
+          driverId: e.driverId || d.driver_id || "",
+          callNumber: e.callNumber || d.call_number || "",
+          invoiceNumber: e.invoiceNumber || d.quickbooks_invoice_id || "",
+          isWarranty: !!e.isWarranty,
+          coreStatus: e.coreStatus || d.core_status || "owed",
+          soldDate: e.soldDate || parts.date,
+          soldTime: e.soldTime || parts.time,
+          note: "",
+        });
+      } else if (!data?.success) {
+        setEditMsg(data?.error || "Could not load this sale.");
+      }
+    } catch {
+      setEditMsg("Network error loading this sale.");
+    }
+  }
+
+  async function saveEdit(d: SaleDetail) {
+    setEditBusy(true);
+    setEditMsg("");
+    try {
+      const res = await fetch("/api/sales/edit-entry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           batteryId: d.battery_id,
           movementId: d.movement_id,
-          newDriverId: reassignDriverId,
-          note: reassignNote.trim(),
+          modelCode: editForm.modelCode,
+          truckId: editForm.truckId || null,
+          driverId: editForm.driverId,
+          callNumber: editForm.callNumber,
+          invoiceNumber: editForm.invoiceNumber,
+          isWarranty: editForm.isWarranty,
+          coreStatus: editForm.coreStatus,
+          soldDate: editForm.soldDate,
+          soldTime: editForm.soldTime,
+          note: editForm.note.trim(),
         }),
       });
       const data = await res.json();
       if (!data.success) {
-        setReassignMsg(data.error || "Could not reassign that sale.");
+        setEditMsg(data.error || "Could not save those changes.");
       } else {
-        setReassignMsg(data.message || "Seller updated.");
-        setReassignKey(null);
-        setReassignDriverId("");
-        setReassignNote("");
+        setEditMsg(data.message || "Sale updated.");
+        setEditKey(null);
         await load();
       }
     } catch {
-      setReassignMsg("Network error");
+      setEditMsg("Network error");
     } finally {
-      setReassignBusy(false);
+      setEditBusy(false);
     }
   }
 
@@ -411,11 +505,22 @@ export default function DriverSalesPage() {
             {loading ? "Loading…" : "Apply"}
           </button>
         </div>
+        <div style={{ marginTop: 12 }}>
+          <label style={label}>Find a sale</label>
+          <input
+            style={{ ...input, minWidth: 260 }}
+            value={entryFilter}
+            onChange={(e) => setEntryFilter(e.target.value)}
+            placeholder="Battery ID, call number, or invoice"
+          />
+        </div>
         {loadedRange && (
           <p style={{ color: "#94a3b8", fontSize: 12, marginTop: 10 }}>
             Showing {loadedRange.start.split("T")[0]} to {loadedRange.end.split("T")[0]}. Counts include
             paid and warranty sales; the Warranties column shows how many of Units Sold were warranties.
-            Click a driver to see each sale.
+            Click a driver to see each sale. Owners and managers can click <strong>Edit entry</strong> to
+            correct a size, truck, driver, call or invoice number, warranty flag, core status, or date.
+            Loading the wrong truck should still go through Transfer.
           </p>
         )}
         {error && <div style={{ color: "#dc2626", marginTop: 10, fontSize: 14 }}>{error}</div>}
@@ -442,7 +547,13 @@ export default function DriverSalesPage() {
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  const open = !!expanded[r.driverId];
+                  const filterQ = entryFilter.trim().toLowerCase();
+                  const matchesFilter = (d: SaleDetail) =>
+                    !filterQ || [d.barcode, d.serial_number, d.call_number, d.quickbooks_invoice_id].some((v) =>
+                      String(v || "").toLowerCase().includes(filterQ),
+                    );
+                  const open = !!expanded[r.driverId] || (filterQ !== "" && r.details.some(matchesFilter));
+
                   return (
                     <Fragment key={r.driverId}>
                       <tr
@@ -486,14 +597,22 @@ export default function DriverSalesPage() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {r.details.map((d, i) => (
+                                  {(entryFilter.trim()
+                                ? r.details.filter((d) => {
+                                    const q = entryFilter.trim().toLowerCase();
+                                    return [d.barcode, d.serial_number, d.call_number, d.quickbooks_invoice_id].some((v) =>
+                                      String(v || "").toLowerCase().includes(q),
+                                    );
+                                  })
+                                : r.details
+                              ).map((d, i) => (
                                     <tr key={`${d.barcode || i}-${d.sold_at || i}`}>
                                       <td style={td}>{d.sold_at ? String(d.sold_at).slice(0, 10) : "—"}</td>
                                       <td style={td}>{d.battery_group || "—"}</td>
                                       <td style={{ ...td, fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12 }}>
                                         {d.barcode || "—"}
                                         {d.serial_number ? <div style={{ color: "#64748b" }}>SN {d.serial_number}</div> : null}
-                                        {d.truck_number ? <div style={{ color: "#64748b" }}>Truck #{d.truck_number}</div> : null}
+                                        {d.truck_number ? <div style={{ color: "#64748b" }}>{formatTruckLabel(d.truck_number)}</div> : null}
                                       </td>
                                       <td style={td}>{invoiceLabel(d)}</td>
                                       <td style={td}>{d.customer || "—"}</td>
@@ -511,46 +630,118 @@ export default function DriverSalesPage() {
                                         {d.battery_id || d.movement_id ? (
                                           <button
                                             type="button"
-                                            onClick={() => {
-                                              const key = `${d.movement_id || ""}:${d.barcode || i}`;
-                                              setReassignKey(reassignKey === key ? null : key);
-                                              setReassignDriverId("");
-                                              setReassignNote("");
-                                              setReassignMsg("");
-                                            }}
+                                            onClick={() => openEdit(d, i)}
                                             style={{ background: "#e2e8f0", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12 }}
                                           >
-                                            Reassign seller
+                                            Edit entry
                                           </button>
                                         ) : null}
-                                        {reassignKey === `${d.movement_id || ""}:${d.barcode || i}` ? (
-                                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6, minWidth: 180 }}>
-                                            <select
-                                              aria-label="New selling driver"
-                                              value={reassignDriverId}
-                                              onChange={(e) => setReassignDriverId(e.target.value)}
-                                              style={{ padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}
-                                            >
-                                              <option value="">Pick the driver</option>
-                                              {drivers.filter((dr) => dr.id !== d.driver_id).map((dr) => (
-                                                <option key={dr.id} value={dr.id}>{dr.name}</option>
-                                              ))}
-                                            </select>
+                                        {editKey === saleKey(d, i) ? (
+                                          <div style={{ marginTop: 8, display: "grid", gap: 6, minWidth: 240, maxWidth: 320 }}>
+                                            <label style={label}>Size / model
+                                              <select
+                                                aria-label="Battery size or model"
+                                                value={editForm.modelCode}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, modelCode: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              >
+                                                <option value="">{d.battery_group || "Pick a size"}</option>
+                                                {(editOptions?.models || []).map((m) => (
+                                                  <option key={m.id} value={m.code}>{m.code}</option>
+                                                ))}
+                                              </select>
+                                            </label>
+                                            <label style={label}>Truck
+                                              <select
+                                                aria-label="Sale truck"
+                                                value={editForm.truckId}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, truckId: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              >
+                                                <option value="">{d.truck_number ? formatTruckLabel(d.truck_number) : "No truck"}</option>
+                                                {(editOptions?.trucks || []).map((tr) => (
+                                                  <option key={tr.id} value={tr.id}>{formatTruckLabel(tr.truck_number)}</option>
+                                                ))}
+                                              </select>
+                                            </label>
+                                            <label style={label}>Sold by
+                                              <select
+                                                aria-label="Selling driver"
+                                                value={editForm.driverId}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, driverId: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              >
+                                                <option value="">Pick the driver</option>
+                                                {(editOptions?.drivers || drivers).map((dr) => (
+                                                  <option key={dr.id} value={dr.id}>{dr.name}</option>
+                                                ))}
+                                              </select>
+                                            </label>
+                                            <label style={label}>Call number
+                                              <input
+                                                value={editForm.callNumber}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, callNumber: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              />
+                                            </label>
+                                            <label style={label}>Invoice number
+                                              <input
+                                                value={editForm.invoiceNumber}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              />
+                                            </label>
+                                            <label style={label}>Sale date
+                                              <input
+                                                type="date"
+                                                value={editForm.soldDate}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, soldDate: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              />
+                                            </label>
+                                            <label style={label}>Sale time
+                                              <input
+                                                type="time"
+                                                value={editForm.soldTime}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, soldTime: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              />
+                                            </label>
+                                            <label style={{ ...label, display: "flex", alignItems: "center", gap: 8 }}>
+                                              <input
+                                                type="checkbox"
+                                                checked={editForm.isWarranty}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, isWarranty: e.target.checked }))}
+                                              />
+                                              Warranty replacement
+                                            </label>
+                                            <label style={label}>Core status
+                                              <select
+                                                aria-label="Core status"
+                                                value={editForm.coreStatus}
+                                                onChange={(e) => setEditForm((f) => ({ ...f, coreStatus: e.target.value }))}
+                                                style={{ ...input, width: "100%" }}
+                                              >
+                                                <option value="owed">Owed</option>
+                                                <option value="returned">Returned</option>
+                                                <option value="customer_kept">Customer kept</option>
+                                              </select>
+                                            </label>
                                             <input
-                                              value={reassignNote}
-                                              onChange={(e) => setReassignNote(e.target.value)}
-                                              placeholder="Optional note"
-                                              style={{ padding: 6, borderRadius: 6, border: "1px solid #cbd5e1" }}
+                                              value={editForm.note}
+                                              onChange={(e) => setEditForm((f) => ({ ...f, note: e.target.value }))}
+                                              placeholder="Optional note (saved in the audit trail)"
+                                              style={{ ...input, width: "100%" }}
                                             />
                                             <button
                                               type="button"
-                                              disabled={reassignBusy || !reassignDriverId}
-                                              onClick={() => reassignSeller(d)}
+                                              disabled={editBusy || !editForm.driverId}
+                                              onClick={() => saveEdit(d)}
                                               style={{ background: "#0f172a", color: "#f8fafc", border: "none", borderRadius: 6, padding: "6px 8px", cursor: "pointer", fontSize: 12 }}
                                             >
-                                              {reassignBusy ? "Saving…" : "Save new seller"}
+                                              {editBusy ? "Saving…" : "Save changes"}
                                             </button>
-                                            {reassignMsg ? <span style={{ fontSize: 12, color: "#334155" }}>{reassignMsg}</span> : null}
+                                            {editMsg ? <span style={{ fontSize: 12, color: "#334155" }}>{editMsg}</span> : null}
                                           </div>
                                         ) : null}
                                       </td>
