@@ -97,3 +97,29 @@ export function optionalYmdBounds(startRaw: string | null | undefined, endRaw: s
     timeZone,
   };
 }
+
+/** Instant for ymd + HH:mm[:ss] in the given IANA zone. Defaults to noon if no time is given. */
+export function zonedDateTime(ymd: string, timeHHMM: string | null | undefined, timeZone: string): Date {
+  const { start } = zonedDayRange(ymd, timeZone);
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec((timeHHMM || "").trim());
+  const h = m ? Number(m[1]) : 12;
+  const min = m ? Number(m[2]) : 0;
+  const s = m ? Number(m[3] || 0) : 0;
+  if (h > 23 || min > 59 || s > 59) throw new Error("Time must be HH:MM.");
+  return new Date(start.getTime() + ((h * 60 + min) * 60 + s) * 1000);
+}
+
+export function zonedTimeHM(at: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(at)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.hour}:${parts.minute}`;
+}
+
