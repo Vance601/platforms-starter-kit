@@ -11,6 +11,7 @@ import { sql } from '@vercel/postgres';
 import { getCurrentUser } from '@/lib/current-user';
 import { getCoreLedger, summarizeCores } from '@/lib/core-ledger';
 import { optionalYmdBounds } from '@/lib/org-day-range';
+import { toSortableIso } from '@/lib/sortable-iso';
 import { orgTimezone } from '@/lib/org-timezone';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,7 @@ function money(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
+
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
@@ -87,7 +89,7 @@ export async function GET(req: NextRequest) {
       owedCores.push({
         barcode: r.barcode,
         sold_on_call_number: r.sold_on_call_number,
-        sold_at: r.sold_at,
+        sold_at: toSortableIso(r.sold_at) || null,
         driver_name: r.driver_name,
         truck_number: r.truck_number,
         model_code: r.model_code,
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest) {
     const outstanding = Array.from(owedMap.values()).sort(
       (a, b) => b.cores_owed - a.cores_owed || a.driver_name.localeCompare(b.driver_name) || (a.truck_number || '').localeCompare(b.truck_number || '')
     );
-    owedCores.sort((a, b) => (b.sold_at || '').localeCompare(a.sold_at || '') || a.barcode.localeCompare(b.barcode));
+    owedCores.sort((a, b) => toSortableIso(b.sold_at).localeCompare(toSortableIso(a.sold_at)) || a.barcode.localeCompare(b.barcode));
     const ledgerSummary = summarizeCores(ledger);
 
     // Counts and dollars per status.
