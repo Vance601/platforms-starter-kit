@@ -15,7 +15,8 @@
     "test:scan": "npx --yes tsx scripts/verify-scan.ts",
     "test:warehouse": "npx --yes tsx scripts/verify-warehouse-sales.ts",
     "test:report-dates": "npx --yes tsx scripts/verify-daily-report-dates.ts",
-    "test:org-days": "npx --yes tsx scripts/verify-org-day-range.ts"
+    "test:org-days": "npx --yes tsx scripts/verify-org-day-range.ts",
+    "test:core-dates": "npx --yes tsx scripts/verify-core-accountability-dates.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.7.2",

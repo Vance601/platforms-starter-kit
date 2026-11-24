@@ -79,8 +79,10 @@ const STOCK_CODES = [
   "124R", "140R", "151R", "24F", "27", "34", "35", "47", "47AGM", "48", "48AGM", "49", "49AGM", "51", "51R", "65", "78", "86", "94R", "94RAGM", "96R", "AUX14", "PRIUS", "TESLA", "SX48", "SX86", "SX94R", "SX65", "31xxD", "31xxE",
 ];
 
-function money(n: number): string {
-  return n.toLocaleString("en-US", {
+function money(n: number | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  return v.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
@@ -153,6 +155,12 @@ export default function CoreAccountabilityPage() {
         setError(formJson.error || "Could not load.");
         return;
       }
+      if (repJson.error || !repJson.summary) {
+        setError(repJson.error || "Could not load core accountability data.");
+        setForm(formJson);
+        setLoaded(true);
+        return;
+      }
 
       setReport(repJson);
       setForm(formJson);
@@ -184,7 +192,7 @@ export default function CoreAccountabilityPage() {
     setError(null);
     try {
       const repJson = await fetchReport(nextFrom, nextTo);
-      if (repJson.error) setError(repJson.error);
+      if (repJson.error || !repJson.summary) setError(repJson.error || "Could not load core accountability data.");
       else setReport(repJson);
     } catch {
       setError("Network error loading the report.");
